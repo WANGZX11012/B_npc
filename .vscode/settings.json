@@ -1,0 +1,6 @@
+{
+    "verilog.language.linter": "none",
+    "verilog.linting.linter": "verilator",
+    "verilog.linting.verilator.arguments": "-Wall -Wno-UNDRIVEN -Wno-UNUSED -Wno-UNUSEDPARAM -Wno-UNUSEDSIGNAL -Wno-WIDTH",
+    "verilog.linting.verilator.runAtFileLocation": false
+}
