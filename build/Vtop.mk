@@ -37,18 +37,29 @@ VM_PREFIX = Vtop
 VM_MODPREFIX = Vtop
 # User CFLAGS (from -CFLAGS on Verilator command line)
 VM_USER_CFLAGS = \
+  -I/home/wang/ysyx-workbench/npc/csrc -I/home/wang/ysyx-workbench/nemu/include -DENABLE_DIFFTEST=0 \
 
 # User LDLIBS (from -LDFLAGS on Verilator command line)
 VM_USER_LDLIBS = \
+  -ldl \
 
 # User .cpp files (from .cpp's on Verilator command line)
 VM_USER_CLASSES = \
+  cpu-exec \
+  difftest \
+  dpic_mem \
   main \
+  monitor \
+  npc \
+  sdb \
 
 # User .cpp directories (from .cpp's on Verilator command line)
 VM_USER_DIR = \
   .. \
   ../csrc \
+  ../csrc/cpu \
+  ../csrc/monitor \
+  ../csrc/sdb \
 
 ### Default rules...
 # Include list of all generated classes
@@ -59,7 +70,19 @@ include $(VERILATOR_ROOT)/include/verilated.mk
 ### Executable rules... (from --exe)
 VPATH += $(VM_USER_DIR)
 
-main.o: csrc/main.cpp 
+cpu-exec.o: /home/wang/ysyx-workbench/npc/csrc/cpu/cpu-exec.c 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
+difftest.o: /home/wang/ysyx-workbench/npc/csrc/difftest.cpp 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
+dpic_mem.o: /home/wang/ysyx-workbench/npc/csrc/dpic_mem.cpp 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
+main.o: /home/wang/ysyx-workbench/npc/csrc/main.c 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
+monitor.o: /home/wang/ysyx-workbench/npc/csrc/monitor/monitor.c 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
+npc.o: /home/wang/ysyx-workbench/npc/csrc/npc.cpp 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
+sdb.o: /home/wang/ysyx-workbench/npc/csrc/sdb/sdb.c 
 	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
 
 ### Link rules... (from --exe)

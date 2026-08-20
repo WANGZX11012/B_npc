@@ -1,9 +1,4 @@
-main.o: ../csrc/main.cpp Vtop.h \
- /usr/local/share/verilator/include/verilated.h \
- /usr/local/share/verilator/include/verilated_config.h \
- /usr/local/share/verilator/include/verilatedos.h \
- /usr/local/share/verilator/include/verilated_types.h \
- /usr/local/share/verilator/include/verilated_funcs.h \
- /usr/local/share/verilator/include/verilated_vcd_c.h \
- /usr/local/share/verilator/include/verilated.h \
- /usr/local/share/verilator/include/verilated_trace.h
+main.o: /home/wang/ysyx-workbench/npc/csrc/main.c \
+ /home/wang/ysyx-workbench/npc/csrc/npc.h \
+ /home/wang/ysyx-workbench/npc/csrc/monitor/monitor.h \
+ /home/wang/ysyx-workbench/npc/csrc/sdb/sdb.h

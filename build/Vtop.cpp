@@ -11,9 +11,15 @@ Vtop::Vtop(VerilatedContext* _vcontextp__, const char* _vcname__)
     : VerilatedModel{*_vcontextp__}
     , vlSymsp{new Vtop__Syms(contextp(), _vcname__, this)}
     , clk{vlSymsp->TOP.clk}
-    , reset{vlSymsp->TOP.reset}
+    , rst{vlSymsp->TOP.rst}
     , halt{vlSymsp->TOP.halt}
+    , aborted{vlSymsp->TOP.aborted}
+    , state_dbg{vlSymsp->TOP.state_dbg}
+    , stall_ifu{vlSymsp->TOP.stall_ifu}
+    , mmio_dbg{vlSymsp->TOP.mmio_dbg}
     , pc{vlSymsp->TOP.pc}
+    , ir_dbg{vlSymsp->TOP.ir_dbg}
+    , __PVT____024unit{vlSymsp->TOP.__PVT____024unit}
     , rootp{&(vlSymsp->TOP)}
 {
     // Register model with the context

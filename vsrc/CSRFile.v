@@ -5,7 +5,7 @@ module CSRFile#(
 ) (
     //不需要读使能
     input           clk,
-    input           reset,
+    input  wire         rst,
     input           csr_wen,
     input           ecall_trap,   //trap 信号相当于 NO
     input           ebreak_trap,  //ebreak 断点异常 (mcause=3)
@@ -34,7 +34,7 @@ module CSRFile#(
 
 	always @(posedge clk)//mcycle 自增逻辑
 	begin
-	   if(reset)
+	   if(rst)
 	       mcycle <= 64'b0;
 	   else
 	       mcycle <= mcycle + 64'b1;
@@ -43,7 +43,7 @@ module CSRFile#(
     //模仿intr.c的 isa_raise_intr
     always @(posedge clk) 
     begin
-        if(reset) 
+        if(rst) 
         begin
             mcause <= 0;
             mepc <= 0;
