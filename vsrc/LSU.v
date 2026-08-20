@@ -1,69 +1,67 @@
 `include "npc_defs.vh"
 
-// LSU — 访存控制器：SimpleBus 主设备
-// 从 IDU 接收访存请求，转为 SimpleBus 总线协议发给 data_mem
-// idle: 发请求 (addr, wen, wdata, wmask)
-// wait: 等内存返回 (respValid=1 → 数据有效)
+// LSU — 访存控制器：AXI4-Lite 主设备（读+写，复用 axi_lite_master）
 
 module LSU (
+
+  // Clock & Reset
   input  wire         clk,
-  input  wire         mem_req,       // ctrl: MEM 状态
-  input  wire         mem_re,        // load 使能
-  input  wire         mem_we,        // store 使能
-  input  wire [1:0]   mem_width,     // BYTE/HALF/WORD
-  input  wire         mem_signed,    // load 符号扩展
-  input  wire [31:0]  wdata_in,      // 要写的数据 (r_data2)
-  input  wire [31:0]  addr_in,       // 访存地址 (alu_out)
+  input  wire         rst,
 
-  // SimpleBus 主设备接口 → data_mem
-  output wire         lsu_reqValid,
-  output wire [31:0]  lsu_addr,
-  output wire         lsu_wen,
-  output wire [31:0]  lsu_wdata,
-  output wire [3:0]   lsu_wmask,
+  // 输入: IDU / ctrl
+  input  wire         mem_req,                        // ctrl: MEM 拍
+  input  wire         mem_re,                         // load
+  input  wire         mem_we,                         // store
+  input  wire [1:0]   mem_width,                      // BYTE / HALF / WORD
+  input  wire         mem_signed,                     // load sign-extend
 
-  input  wire [31:0]  lsu_rdata,
-  input  wire         lsu_respValid,
-  output wire         lsu_done,      // 本拍事务完成
+  // 输入: 数据通路 提供给axi的驱动信号
+  output              req_valid,
+  output[31:0]        req_addr,
+  input [31:0]        wdata_in,                       // r_data2 (store data)
+  input [31:0]        rdata_in,
+  input [31:0]        addr_in,                        // alu_out  (memory addr)
+  input               handshake_done,                 //axi反馈回来的握手完成信号
 
-  // 读回数据（经符号扩展）→ WBU
-  output wire [31:0]  rdata
+  output[31:0]        req_wdata,
+  output[3:0]         req_wmask,
+
+  // 输出: to ctrl / WBU
+  output wire         lsu_done,                       // transaction complete
+  output wire [31:0]  rdata_out                       // read data (sign-extended)
+
 );
 
-  localparam [0:0] S_IDLE = 0, S_WAIT = 1;
-  reg [0:0] bus_state, bus_next;
-
-  always @(posedge clk)
-    bus_state <= bus_next;
-
-  wire do_req = mem_req && (mem_re || mem_we);   // MEM 拍 + IDU 说访存
-
-  always @(*) 
-  begin
-    case (bus_state)
-      S_IDLE: bus_next = do_req ? S_WAIT : S_IDLE;       // 有请求才进 wait
-      S_WAIT: bus_next = lsu_respValid ? S_IDLE : S_WAIT; // 数据到 → 回 idle
-      default: bus_next = S_IDLE;
+  // ── wmask: mem_width + addr_in[1:0] → 字节写掩码 ──
+  wire [1:0] off = addr_in[1:0];
+  reg  [3:0] wmask_gen;
+  always @(*) begin
+    case (mem_width)
+      `MEM_BYTE: wmask_gen = (4'b0001 << off);            // 00→0001 01→0010 10→0100 11→1000
+      `MEM_HALF: wmask_gen = off[1] ? 4'b1100 : 4'b0011;  // 半字按 addr[1] 对齐
+      default:   wmask_gen = 4'b1111;                     // MEM_WORD
     endcase
   end
 
-  assign lsu_reqValid = (bus_state == S_IDLE) && do_req;
-  assign lsu_addr     = addr_in;
-  assign lsu_wen      = mem_we;
-  assign lsu_wdata    = wdata_in;
+  assign req_wmask = wmask_gen;
 
-  // wmask：字节/半字/字
-  assign lsu_wmask = (mem_width == `MEM_BYTE)  ? 4'b0001 :
-                     (mem_width == `MEM_HALF)  ? 4'b0011 :
-                     /* MEM_WORD */              4'b1111;
+  // ── store 数据摆位（复制到各字节通道，由 wmask 决定实际写入）──
+  wire [31:0] wdata_gen = (mem_width == `MEM_BYTE) ? {4{wdata_in[7:0]}} :
+                          (mem_width == `MEM_HALF) ? {2{wdata_in[15:0]}} :
+                          wdata_in;
+                      
+  assign  req_wdata = wdata_gen;
 
-  assign lsu_done = (bus_state == S_WAIT) && lsu_respValid;
+  // ── load 选字节 + 符号扩展 ──
+  wire [7:0]  lb = rdata_in >> {addr_in[1:0], 3'b0};   // 按 addr 选出目标字节到 [7:0]
+  wire [15:0] lh = rdata_in >> {addr_in[1],   4'b0};   // 按 addr[1] 选出目标半字到 [15:0]
+  assign rdata_out = (mem_width == `MEM_BYTE) ? (mem_signed ? {{24{lb[7]}},  lb} : {24'b0, lb}) :
+                     (mem_width == `MEM_HALF) ? (mem_signed ? {{16{lh[15]}}, lh} : {16'b0, lh}) :
+                     rdata_in;
 
-  // 读数据符号扩展
-  assign rdata = (mem_width == `MEM_BYTE)  ? (mem_signed ? {{24{lsu_rdata[ 7]}}, lsu_rdata[ 7:0]}
-                                                          : {24'b0, lsu_rdata[7:0]})
-               : (mem_width == `MEM_HALF)  ? (mem_signed ? {{16{lsu_rdata[15]}}, lsu_rdata[15:0]}
-                                                          : {16'b0, lsu_rdata[15:0]})
-               : /* MEM_WORD */               lsu_rdata;
+    // ── 请求有效 ──
+  assign req_valid = mem_req && (mem_re || mem_we); //后面的判断有点多余？
+  assign req_addr = addr_in;
+  assign lsu_done = handshake_done;
 
 endmodule

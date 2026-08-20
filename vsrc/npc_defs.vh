@@ -44,6 +44,7 @@
 `define NPC_EXE   3'd3
 `define NPC_MEM   3'd4
 `define NPC_WB    3'd5
+`define NPC_ERR   3'd6   // 非法指令/异常终止：卡死在此，abort 拉高
 
 // 分支类型编码
 `define BR_NONE 3'b000

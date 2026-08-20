@@ -1,57 +1,51 @@
 `include "npc_defs.vh"
 
-// IFU – 取指单元：PC + SimpleBus 主设备接口
-// idle: 发读请求 (ifu_reqValid=1, ifu_raddr=pc)
-// wait: 等内存返回数据 (ifu_respValid=1 → 指令有效)
-
 module IFU (
-  input  wire         clk,
-  input  wire         reset,
-  input  wire         pc_we,
-  input  wire         fetch_req,       // ctrl: 需要取指（FETCH 状态）
-  input  wire [31:0]  alu_result,
-  input  wire [2:0]   npc_sel,
-  input  wire         branch_taken,
-  input  wire [31:0]  csr_mtvec,
-  input  wire [31:0]  csr_mepc,
-  output wire [31:0]  pc,
-  output wire [31:0]  pc4,
 
-  // SimpleBus 读接口
-  input  wire [31:0]  ifu_rdata,
-  input  wire         ifu_respValid,
-  output wire [31:0]  ifu_raddr,
-  output wire         ifu_reqValid,
-  output wire         ifu_done         // 本拍拿到有效指令
+  // Clock & Reset
+  input  wire         clk,
+  input  wire         rst,
+
+  // 输入: ctrl
+  input  wire         pc_we,                           // update PC
+  input  wire         fetch_req,                       // ctrl: FETCH state
+
+  // 输入: EXU / CSR (next-PC calc)
+  input  wire [31:0]  alu_result,                      // jump/branch target
+  input  wire [2:0]   npc_sel,                         // NPC_JALR/JAL/BR/...
+  input  wire         branch_taken,                    // branch condition met
+  input  wire [31:0]  csr_mtvec,                       // exception entry
+  input  wire [31:0]  csr_mepc,                        // mret return addr
+
+
+  //提供给axi转化的信号 简单请求
+  output              req_valid,
+  output [31:0]       req_addr,
+  input               handshake_done, //握手完成信号
+  input  [31:0]       resp_rdata,             
+  // 输出: to core / ctrl
+  output wire [31:0]  pc,                              // program counter
+  output wire [31:0]  pc4,                             // pc + 4
+  output wire [31:0]  inst,                            // fetched instruction
+  output wire         ifu_done                         // instruction valid this cycle
+
 );
 
-  localparam [0:0] S_IDLE = 0, S_WAIT = 1;
+  //提供给axi的输入
+  assign  req_valid = fetch_req; //不用！stall ，stall只是为了控制axi总线停顿的信号
+  assign  req_addr = pc;
+  //自己的输出
+  assign  ifu_done =  handshake_done;
+  assign  inst  = resp_rdata; //返回的指令
 
-  reg [0:0] bus_state, bus_next;
 
-  always @(posedge clk) begin
-    if (reset) bus_state <= S_IDLE;
-    else       bus_state <= bus_next;
-  end
-
-  always @(*) begin
-    case (bus_state)
-      S_IDLE: bus_next = fetch_req  ? S_WAIT : S_IDLE;      // ctrl 说取指才发请求
-      S_WAIT: bus_next = ifu_respValid ? S_IDLE : S_WAIT;   // 数据到 → 回 idle
-      default: bus_next = S_IDLE;
-    endcase
-  end
-
-  assign ifu_reqValid = (bus_state == S_IDLE) && fetch_req;
-  assign ifu_raddr    = pc;
-  assign ifu_done     = (bus_state == S_WAIT) && ifu_respValid;  // WAIT 拍且数据有效
-
-  // ── PC 寄存器 ──
+  // ── PC register ──
   reg [31:0] pc_reg;
   initial pc_reg = 32'h8000_0000;
 
-  always @(posedge clk) begin
-    if (reset)
+  always @(posedge clk)
+  begin
+    if (rst)
       pc_reg <= 32'h8000_0000;
     else if (pc_we)
       pc_reg <= next_pc;
@@ -67,5 +61,6 @@ module IFU (
                    (npc_sel == `NPC_ECALL)               ? csr_mtvec :
                    (npc_sel == `NPC_MRET)                ? csr_mepc  :
                    pc4;
+
 
 endmodule

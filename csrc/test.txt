@@ -1,0 +1,34 @@
+=== 内存读写综合测试 ===
+基地址: t0 = 0x80001000
+
+1. 字读写 (sw/lw)
+   800002b7   lui  t0, 0x80001          t0 = 0x80001000
+   deadc337   lui  t1, 0xDEADC          t1 = 0xDEADC000
+   eef30313   addi t1, t1, -273         t1 = 0xDEADBEEF
+   0062a023   sw   t1, 0(t0)            写: [0x80001000] = 0xDEADBEEF
+   0002ae83   lw   t4, 0(t0)            读: t4 = 0xDEADBEEF ?
+
+2. 字节读写 (sb/lbu)
+   04200393   addi t2, zero, 0x42       t2 = 0x42
+   00728823   sb   t2, 16(t0)           写: [0x80001010] = 0x42
+   0102cf03   lbu  t5, 16(t0)           读: t5 = 0x42 ?
+
+3. 半字读写 (sh/lhu)
+   23400e13   addi t3, zero, 0x234      t3 = 0x234
+   00001fb7   lui  t6, 0x1              t6 = 0x1000
+   01fe0e33   add  t3, t3, t6           t3 = 0x1234
+   03c29023   sh   t3, 32(t0)           写: [0x80001020] = 0x1234
+   0202df83   lhu  t6, 32(t0)           读: t6 = 0x1234 ?
+
+4. 第二个字读写
+   cafec337   lui  t1, 0xCAFEC          t1 = 0xCAFEC000
+   abe30313   addi t1, t1, -1346        t1 = 0xCAFEBABE
+   0262a823   sw   t1, 48(t0)           写: [0x80001030] = 0xCAFEBABE
+   0302ae83   lw   t4, 48(t0)           读: t4 = 0xCAFEBABE ?
+
+   00100073   ebreak                    halt
+
+波形验证点 (MEM 拍):
+  lsu_wdata: DEADBEEF → 42 → 1234 → CAFEBABE
+  lsu_wmask: F(1111) → 1(0001) → 3(0011) → F(1111)
+  lsu_rdata: 读回值与写入一致
