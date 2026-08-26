@@ -62,6 +62,6 @@ module arbiter (
   assign ifu_done       = m_done &&  sel_is_ifu;
   assign lsu_done       = m_done && !sel_is_ifu;
   assign ifu_resp_rdata = m_resp_rdata;   // 输家 done=0 不会采，直接都接即可
-  assign lsu_resp_rdata = m_resp_rdata;
+  assign lsu_resp_rdata = m_resp_rdata;   //虽然数据都广播给两个主设备 但是没有done就推进不下去 达到阻塞的效果
 
 endmodule

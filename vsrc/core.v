@@ -151,8 +151,54 @@ module core (
     .bresp(m_bresp), .bvalid(m_bvalid), .bready(m_bready)
   );
 
+  // ── axi_xbar：把 axi_lite_master 的单路 AXI 按地址扇出到 {rtc, uart, mem} ──
+  // 译码/门控/广播/多选全在 xbar 内部。core 只做两件事:
+  //   1) xbar 主口 m_* 直接接上面 axi_lite_master 的输出;
+  //   2) 三个从设备的端口改接 xbar 从口。
+  // 从设备驱动的信号(arready/rdata/...)仍用原 wire, xbar 驱动侧用新 wire。
+  // mem 从口(xbar 驱动侧; xbar 端口叫 mem_*, 这里接到 core 的 dmem_* 线)
+  wire [31:0] dmem_araddr, dmem_awaddr, dmem_wdata;
+  wire [3:0]  dmem_wmask;
+  wire        dmem_arvalid, dmem_rready, dmem_awvalid, dmem_wvalid, dmem_bready;
+  // uart 从口(xbar 驱动侧)
+  wire [31:0] uart_araddr, uart_awaddr, uart_wdata;
+  wire [3:0]  uart_wmask;
+  wire        uart_arvalid, uart_rready, uart_awvalid, uart_wvalid, uart_bready;
+  // rtc 从口(xbar 驱动侧, 只读)
+  wire [31:0] rtc_araddr;
+  wire        rtc_arvalid;
+  // MMIO 标记(xbar 判定, 供 difftest 跳过比对)
+  wire        mmio_sel;
+
+  axi_xbar u_xbar (
+    // 主口 ← axi_lite_master
+    .m_araddr (m_araddr),  .m_arvalid (m_arvalid),  .m_arready (m_arready),
+    .m_rdata  (m_rdata),   .m_rresp   (m_rresp),    .m_rvalid  (m_rvalid),  .m_rready (m_rready),
+    .m_awaddr (m_awaddr),  .m_awvalid (m_awvalid),  .m_awready (m_awready),
+    .m_wdata  (m_wdata),   .m_wmask   (m_wmask),    .m_wvalid  (m_wvalid),  .m_wready (m_wready),
+    .m_bresp  (m_bresp),   .m_bvalid  (m_bvalid),   .m_bready  (m_bready),
+    // 从口 → mem
+    .mem_araddr (dmem_araddr),  .mem_arvalid (dmem_arvalid),  .mem_arready (dmem_arready),
+    .mem_rdata  (dmem_rdata),   .mem_rresp   (dmem_rresp),    .mem_rvalid  (dmem_rvalid),  .mem_rready (dmem_rready),
+    .mem_awaddr (dmem_awaddr),  .mem_awvalid (dmem_awvalid),  .mem_awready (dmem_awready),
+    .mem_wdata  (dmem_wdata),   .mem_wmask   (dmem_wmask),    .mem_wvalid  (dmem_wvalid),  .mem_wready (dmem_wready),
+    .mem_bresp  (dmem_bresp),   .mem_bvalid  (dmem_bvalid),   .mem_bready  (dmem_bready),
+    // 从口 → uart
+    .uart_araddr (uart_araddr),  .uart_arvalid (uart_arvalid),  .uart_arready (uart_arready),
+    .uart_rdata  (uart_rdata),   .uart_rresp   (uart_rresp),    .uart_rvalid  (uart_rvalid),  .uart_rready (uart_rready),
+    .uart_awaddr (uart_awaddr),  .uart_awvalid (uart_awvalid),  .uart_awready (uart_awready),
+    .uart_wdata  (uart_wdata),   .uart_wmask   (uart_wmask),    .uart_wvalid  (uart_wvalid),  .uart_wready (uart_wready),
+    .uart_bresp  (uart_bresp),   .uart_bvalid  (uart_bvalid),   .uart_bready  (uart_bready),
+    // 从口 → rtc（只读）
+    .rtc_araddr (rtc_araddr),  .rtc_arvalid (rtc_arvalid),  .rtc_arready (rtc_arready),
+    .rtc_rdata  (rtc_rdata),   .rtc_rresp   (rtc_rresp),    .rtc_rvalid  (rtc_rvalid),
+    // MMIO 标记
+    .mmio_sel (mmio_sel)
+  );
+
   // ── LFSR:每拍推进, 按阈值产生随机总线停顿 ──
   // lfsr 输出 1~255(不含 0), 阈值 16 → 约 1/16 概率停一拍
+`ifdef HAS_LFSR
   lfsr u_lfsr (
     .clk (clk),
     .rst (rst),
@@ -160,8 +206,9 @@ module core (
     .val (lfsr_val)
   );
   assign bus_stall = (lfsr_val < 8'd16); //小于16就stall
-
-
+`else
+  assign bus_stall = 1'b0;               // 未开 LFSR: 总线不停顿
+`endif
 
 
   // ── 控制器 ──
@@ -193,28 +240,22 @@ module core (
     if (ctrl_state == `NPC_EXE) alu_out <= alu_result;
 
 
-  // ── 外设段判断：0xa00000xx 是 RTC 外设段 ──
-  wire rtc_sel = (m_araddr[31:8] == 24'ha00000);
-
-  // ── RTC 从设备（墙钟只读）──
+  // ── RTC 从设备（墙钟只读）── 段译码/门控已移到 axi_xbar, 这里只接 xbar 从口
   wire        rtc_arready, rtc_rvalid;
   wire [31:0] rtc_rdata;
   wire [1:0]  rtc_rresp;
   rtc u_rtc (
     .clk    (clk),
-    .araddr (m_araddr),
-    .arvalid(m_arvalid && rtc_sel),
+    .araddr (rtc_araddr),
+    .arvalid(rtc_arvalid),
     .arready(rtc_arready),
     .rdata  (rtc_rdata),
     .rresp  (rtc_rresp),
     .rvalid (rtc_rvalid),
-    .rready (m_rready)
+    .rready (m_rready)   // rtc 的 rready 不走 xbar(xbar 无 rtc_rready 口), 直接连 master
   );
 
-  // ── UART 段判断：0xa00003f0 ~ 0xa00003ff（串口 0xa00003f8）──
-  wire uart_sel = (m_araddr[31:4] == 28'ha00003f) || (m_awaddr[31:4] == 28'ha00003f);
-
-  // ── UART 从设备（串口，写打印 / 读返回 0）──
+  // ── UART 从设备（串口，写打印 / 读返回 0）── 段译码/门控已移到 axi_xbar
   wire        uart_arready, uart_rvalid;
   wire [31:0] uart_rdata;
   wire [1:0]  uart_rresp;
@@ -222,60 +263,48 @@ module core (
   wire [1:0]  uart_bresp;
   uart u_uart (
     .clk    (clk),
-    .araddr (m_araddr), .arvalid(m_arvalid && uart_sel), .arready(uart_arready),
-    .rdata  (uart_rdata), .rresp(uart_rresp), .rvalid(uart_rvalid), .rready(m_rready),
-    .awaddr (m_awaddr),
-    .awvalid(m_awvalid && uart_sel),
+    .araddr (uart_araddr), .arvalid(uart_arvalid), .arready(uart_arready),
+    .rdata  (uart_rdata), .rresp(uart_rresp), .rvalid(uart_rvalid), .rready(uart_rready),
+    .awaddr (uart_awaddr),
+    .awvalid(uart_awvalid),
     .awready(uart_awready),
-    .wdata  (m_wdata),
-    .wmask  (m_wmask),
-    .wvalid (m_wvalid && uart_sel),
+    .wdata  (uart_wdata),
+    .wmask  (uart_wmask),
+    .wvalid (uart_wvalid),
     .wready (uart_wready),
     .bresp  (uart_bresp),
     .bvalid (uart_bvalid),
-    .bready (m_bready)
+    .bready (uart_bready)
   );
 
-  // ── 统一内存（取指 + 访存共用同一个 pmem 从设备）──
+  // ── 统一内存（取指 + 访存共用同一个 mem 从设备）── 段译码/门控已移到 axi_xbar
   wire        dmem_arready, dmem_rvalid, dmem_awready, dmem_wready, dmem_bvalid;
   wire [31:0] dmem_rdata;
   wire [1:0]  dmem_rresp, dmem_bresp;
 `ifdef DPI_MEM
   // DPI 模式: 取指/访存经 DPI-C 读写 NEMU pmem, 只保留一个实例。
-  // pmem 段 = 0x80000000~0x87FFFFFF (128MB), IFU 取指地址与 LSU 访存地址都落在此段,
-  // 故都路由到同一个 dpic_mem。
-  // mmio(uart/rtc) 在 0xa00000xx, 不在此范围, 由 uart_sel/rtc_sel 单独路由。
-  wire pmem_sel = (m_araddr[31:24] >= 8'h80) && (m_araddr[31:24] <= 8'h87);
+  // pmem 段 = 0x80000000~0x87FFFFFF (128MB), 由 xbar 的 mem 从口统一路由。
   dpic_mem u_mem (
     .clk(clk),
-    .araddr(m_araddr), .arvalid(m_arvalid && pmem_sel), .arready(dmem_arready),
-    .rdata(dmem_rdata), .rresp(dmem_rresp), .rvalid(dmem_rvalid), .rready(m_rready),
-    .awaddr(m_awaddr), .awvalid(m_awvalid && pmem_sel), .awready(dmem_awready),
-    .wdata(m_wdata), .wmask(m_wmask), .wvalid(m_wvalid && pmem_sel), .wready(dmem_wready),
-    .bresp(dmem_bresp), .bvalid(dmem_bvalid), .bready(m_bready)
+    .araddr(dmem_araddr), .arvalid(dmem_arvalid), .arready(dmem_arready),
+    .rdata(dmem_rdata), .rresp(dmem_rresp), .rvalid(dmem_rvalid), .rready(dmem_rready),
+    .awaddr(dmem_awaddr), .awvalid(dmem_awvalid), .awready(dmem_awready),
+    .wdata(dmem_wdata), .wmask(dmem_wmask), .wvalid(dmem_wvalid), .wready(dmem_wready),
+    .bresp(dmem_bresp), .bvalid(dmem_bvalid), .bready(dmem_bready)
   );
 `else
   // 非 DPI 模式: 用一块 data_mem(读写)同时服务取指与访存, inst_mem 已并入。
-  data_mem u_mem (                  // delay from menuconfig
+  pmem u_pmem (                  // delay from menuconfig
     .clk(clk),
-    .araddr(m_araddr), .arvalid(m_arvalid && !rtc_sel && !uart_sel), .arready(dmem_arready),
-    .rdata(dmem_rdata), .rresp(dmem_rresp), .rvalid(dmem_rvalid), .rready(m_rready),
-    .awaddr(m_awaddr), .awvalid(m_awvalid && !uart_sel), .awready(dmem_awready),
-    .wdata(m_wdata), .wmask(m_wmask), .wvalid(m_wvalid && !uart_sel), .wready(dmem_wready),
-    .bresp(dmem_bresp), .bvalid(dmem_bvalid), .bready(m_bready)
+    .araddr(dmem_araddr), .arvalid(dmem_arvalid), .arready(dmem_arready),
+    .rdata(dmem_rdata), .rresp(dmem_rresp), .rvalid(dmem_rvalid), .rready(dmem_rready),
+    .awaddr(dmem_awaddr), .awvalid(dmem_awvalid), .awready(dmem_awready),
+    .wdata(dmem_wdata), .wmask(dmem_wmask), .wvalid(dmem_wvalid), .wready(dmem_wready),
+    .bresp(dmem_bresp), .bvalid(dmem_bvalid), .bready(dmem_bready)
   );
 `endif
 
-  // ── 返回给 axi_lite_master 的信号按段多选 ──
-  // 读:rtc/uart mmio 段走各自设备, 其余(pmem)走统一内存
-  assign m_arready = uart_sel ? uart_arready : (rtc_sel ? rtc_arready : dmem_arready);
-  assign m_rvalid  = uart_sel ? uart_rvalid  : (rtc_sel ? rtc_rvalid  : dmem_rvalid);
-  assign m_rdata   = uart_sel ? uart_rdata   : (rtc_sel ? rtc_rdata   : dmem_rdata);
-  assign m_rresp   = uart_sel ? uart_rresp   : (rtc_sel ? rtc_rresp   : dmem_rresp);
-  assign m_awready = uart_sel ? uart_awready : dmem_awready;
-  assign m_wready  = uart_sel ? uart_wready  : dmem_wready;
-  assign m_bresp   = uart_sel ? uart_bresp   : dmem_bresp;
-  assign m_bvalid  = uart_sel ? uart_bvalid  : dmem_bvalid;
+  // 返回给 axi_lite_master 的应答多选（含未命中地址的 DECERR 兜底）已整体移入 axi_xbar。
 
   // ── IDU ──
   IDU u_idu (
@@ -337,14 +366,14 @@ module core (
   assign aborted   = ctrl_abort;   // 非法指令/异常终止
 
   // ── MMIO 检测:供 difftest 跳过外设访问的比对 ──
-  // 一条指令访问 rtc/uart 外设时(rtc_sel 或 uart_sel), 标记本条指令为 MMIO。
+  // xbar 判定本次访问是否落在 rtc/uart 外设(mmio_sel), 标记本条指令为 MMIO。
   // EXE 阶段清零, MEM 阶段采样, 指令完成后 C++ 侧读取。
   reg mmio_flag;
   always @(posedge clk)
   begin
     if (rst)         mmio_flag <= 1'b0;
     else if (ctrl_state == `NPC_EXE) mmio_flag <= 1'b0;
-    else if (ctrl_state == `NPC_MEM) mmio_flag <= (rtc_sel || uart_sel);
+    else if (ctrl_state == `NPC_MEM) mmio_flag <= mmio_sel;
   end
   assign mmio_dbg = mmio_flag;
 

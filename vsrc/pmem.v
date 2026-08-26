@@ -60,6 +60,9 @@ module pmem #(
       mem[{i[14:0], 2'b10}] = img_mem[i][23:16];
       mem[{i[14:0], 2'b11}] = img_mem[i][31:24];
     end
+    // [临时调试] 验证 img_mem 加载 + mem 拷贝
+    $display("DBG img_mem[5206]=%08x img_mem[0]=%08x", img_mem[5206], img_mem[0]);
+    $display("DBG mem[20824..7]=%02x%02x%02x%02x (期待 13050000)", mem[20824], mem[20825], mem[20826], mem[20827]);
   end
 
   localparam [1:0] S_IDLE = 2'd0, S_RD = 2'd1, S_WR = 2'd2;

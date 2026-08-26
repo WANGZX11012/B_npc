@@ -37,7 +37,7 @@ VM_PREFIX = Vtop
 VM_MODPREFIX = Vtop
 # User CFLAGS (from -CFLAGS on Verilator command line)
 VM_USER_CFLAGS = \
-  -I/home/wang/ysyx-workbench/npc/csrc -I/home/wang/ysyx-workbench/nemu/include -DENABLE_DIFFTEST=0 \
+  -DTRACE_ENABLE=0 -I/home/wang/ysyx-workbench/npc/csrc -I/home/wang/ysyx-workbench/nemu/include -DENABLE_DIFFTEST=0 \
 
 # User LDLIBS (from -LDFLAGS on Verilator command line)
 VM_USER_LDLIBS = \
