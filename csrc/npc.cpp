@@ -4,14 +4,27 @@
 #include "Vtop.h"
 #include "Vtop___024root.h"
 #include "verilated.h"
+
+#if TRACE_ENABLE
 #include "verilated_vcd_c.h"
+#define TRACE_DUMP(t)   do { if (tfp) tfp->dump(t); } while (0)
+#define TRACE_CLOSE()   do { if (tfp) { tfp->close(); tfp = nullptr; } } while (0)
+#else
+#define TRACE_DUMP(t)   do {} while (0)
+#define TRACE_CLOSE()   do {} while (0)
+#endif
+
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 
 static Vtop *top = nullptr;
+
+#if TRACE_ENABLE
 static VerilatedVcdC *tfp = nullptr;
 static uint64_t tick = 0;
+#endif
+
 static uint64_t rtc_boot_us = 0;
 
 extern "C" {
@@ -38,6 +51,8 @@ void npc_init(int argc, char *argv[])
   top = new Vtop;
 
   // optional waveform
+  #if TRACE_ENABLE
+
   for (int i = 1; i < argc; i++) 
   {
     if (strcmp(argv[i], "--wave") == 0 || strcmp(argv[i], "-w") == 0) 
@@ -48,22 +63,29 @@ void npc_init(int argc, char *argv[])
       tfp->open("build/sim.vcd");
     }
   }
+
+  #endif
 }
 
 void npc_reset(void) 
 {
   top->clk = 0; top->rst = 1; top->eval();
-  if (tfp) { tfp->dump(tick++); tfp->dump(tick++); tfp->dump(tick++); }
+
+  TRACE_DUMP(tick++); TRACE_DUMP(tick++); TRACE_DUMP(tick++);
+  
   top->clk = 1; top->eval();  // posedge with rst=1, so sync-reset registers actually reset
-  if (tfp) tfp->dump(tick++);
+  
+  TRACE_DUMP(tick++);
+  
   top->rst = 0; top->clk = 0; top->eval();
-  if (tfp) tfp->dump(tick++);  // show clk=0 rst=0 before first npc_cycle posedge
+  
+  TRACE_DUMP(tick++);  // show clk=0 rst=0 before first npc_cycle posedge
 }
 
 void npc_cycle(void) 
 {
-  top->clk = 1; top->eval(); if (tfp) tfp->dump(tick++);
-  top->clk = 0; top->eval(); if (tfp) tfp->dump(tick++);
+  top->clk = 1; top->eval(); TRACE_DUMP(tick++);
+  top->clk = 0; top->eval(); TRACE_DUMP(tick++);
 }
 
 void npc_exec_inst(void) //走完一条指令 500是一条指令的上限时钟周期
@@ -104,6 +126,6 @@ void npc_get_gprs(uint32_t *gpr)
 
 bool npc_get_mmio(void) { return top->mmio_dbg; }
 
-void npc_finish(void) { if (tfp) { tfp->close(); tfp = nullptr; } }
+void npc_finish(void) { TRACE_CLOSE(); }
 
 } // extern "C"

@@ -1,0 +1,15 @@
+Generate the report at 2026-08-21T11:25:08, GitVersion: aa25008b3778a76ae1975c839d4cc459f7f7b3b7.
++-------------------------------------+-----------+--------+-------------+-------------+------+
+| Net / Pin                           | MaxFanout | Fanout | FanoutSlack | LibCellPort | Note |
++-------------------------------------+-----------+--------+-------------+-------------+------+
+| u_core.u_regfile.rf[23]_8_          |           |        |             |             |      |
+| u_core.u_regfile.rf[23]_8__reg_p:Q  | NA        | 2      | NA          | DFFQX1H7L/Q |      |
+| u_core.u_regfile.rf[24]_13_         |           |        |             |             |      |
+| u_core.u_regfile.rf[24]_13__reg_p:Q | NA        | 2      | NA          | DFFQX1H7L/Q |      |
+| u_core.u_regfile.rf[23]_9_          |           |        |             |             |      |
+| u_core.u_regfile.rf[23]_9__reg_p:Q  | NA        | 2      | NA          | DFFQX1H7L/Q |      |
+| u_core.u_regfile.rf[23]_3_          |           |        |             |             |      |
+| u_core.u_regfile.rf[23]_3__reg_p:Q  | NA        | 2      | NA          | DFFQX1H7L/Q |      |
+| u_core.u_regfile.rf[23]_4_          |           |        |             |             |      |
+| u_core.u_regfile.rf[23]_4__reg_p:Q  | NA        | 2      | NA          | DFFQX1H7L/Q |      |
++-------------------------------------+-----------+--------+-------------+-------------+------+
