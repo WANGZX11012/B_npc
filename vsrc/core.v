@@ -1,161 +1,200 @@
 `include "npc_defs.vh"
 
+// 命名约定: 内部连线一律带"来源模块"前缀, 一眼看出信号从哪来、去哪里
+//   ifu_*   IFU        输出
+//   lsu_*   LSU        输出
+//   arb_*   arbiter    输出
+//   mst_*   axi_lite_master 输出 (含 AXI4-Lite 五通道)
+//   idu_*   IDU        输出
+//   rf_*    RegisterFile 输出
+//   exu_*   EXU        输出
+//   wbu_*   WBU        输出
+//   csr_*   CSRFile    输出
+//   ctrl_*  ctrl       输出
+//   xbar_*  axi_xbar   输出
+//   lfsr_*  lfsr       输出
+//   _r 后缀 core 自己的时序锁存(alu_result_r / mmio_flag_r)
 module core (
-  input  wire         clk,
-  input  wire         rst,
-  output wire [31:0]  pc,
-  output wire         halt,       // ebreak 时拉高
-  output wire         aborted,    // 非法指令/异常终止(对齐 NEMU_ABORT)
-  output wire [31:0]  ir_dbg,     // IR for monitor
-  output wire [2:0]   state_dbg,  // ctrl_state for monitor
-  output wire         mmio_dbg    // 本条指令是否访问了外设(供 difftest 跳过比对)
+
+  // Clock & Reset
+  input         clk,
+  input         rst,
+
+  // 输出: to top / monitor
+  output [31:0] pc,          // 当前 PC, IFU 直接驱动
+  output        halt,        // ebreak 时拉高
+  output        aborted,     // 非法指令/异常终止(对齐 NEMU_ABORT)
+  output [31:0] ir_dbg,      // IR for monitor
+  output [2:0]  state_dbg,   // ctrl_state for monitor
+  output        mmio_dbg     // 本条指令是否访问了外设(供 difftest 跳过比对)
 );
 
-  assign halt = (IR == 32'h00100073);
+  // ═══════════════ IFU ↔ arbiter ═══════════════
+  wire [31:0] ifu_pc4;          // IFU → WBU (jal/jalr 写 rd = pc+4)
+  wire [31:0] ifu_npc_normal;   // IFU → 第 4 步作中断 mepc (未被中断劫持的 next pc)
+  wire [31:0] ifu_inst;         // IFU → IR (FET 拍锁存)
+  wire        ifu_done;         // IFU → ctrl (取指完成)
+  wire        ifu_req_valid;    // IFU → arbiter (取指请求)
+  wire [31:0] ifu_req_addr;     // IFU → arbiter (取指地址)
+  wire        arb_ifu_done;     // arbiter → IFU (握手完成)
+  wire [31:0] arb_ifu_rdata;    // arbiter → IFU (返回指令)
 
-  // ═══════════════ IFU 私有请求接口 ═══════════════
-  wire [31:0] pc4;
-  wire [31:0] inst;
-  wire        ifu_done;
-  wire        ifu_req_valid;
-  wire [31:0] ifu_req_addr;
-  wire        ifu_handshake_done;    // arbiter → IFU
-  wire [31:0] ifu_resp_rdata;
+  // ═══════════════ LSU ↔ arbiter ═══════════════
+  wire        lsu_req_valid;    // LSU → arbiter (访存请求)
+  wire [31:0] lsu_req_addr;     // LSU → arbiter (访存地址)
+  wire [31:0] lsu_req_wdata;    // LSU → arbiter (store 数据)
+  wire [3:0]  lsu_req_wmask;    // LSU → arbiter (字节写使能)
+  wire        arb_lsu_done;     // arbiter → LSU (握手完成)
+  wire [31:0] arb_lsu_rdata;    // arbiter → LSU (返回数据)
+  wire        lsu_done;         // LSU → ctrl (访存完成)
+  wire [31:0] lsu_rdata;        // LSU → WBU (load 数据, 已符号/零扩展)
 
-  // ═══════════════ LSU 私有请求接口 ═══════════════
-  wire        lsu_req_valid;
-  wire [31:0] lsu_req_addr;
-  wire [31:0] lsu_req_wdata;
-  wire [3:0]  lsu_req_wmask;
-  wire        lsu_handshake_done;    // arbiter → LSU
-  wire [31:0] lsu_resp_rdata;
-  wire        lsu_done;
-  wire [31:0] mem_rdata;
+  // ═══════════════ arbiter ↔ axi_lite_master ═══════════════
+  wire        arb_req_valid;    // arbiter → master (合并后的请求)
+  wire        arb_req_we;       // arbiter → master
+  wire [31:0] arb_req_addr;     // arbiter → master
+  wire [31:0] arb_req_wdata;    // arbiter → master
+  wire [3:0]  arb_req_wstrb;    // arbiter → master
+  wire        mst_done;         // master → arbiter (传输完成)
+  wire [31:0] mst_resp_rdata;   // master → arbiter (读数据)
 
-  // ═══════════════ arbiter → 唯一 axi_lite_master ═══════════════
-  wire        m_req_valid;
-  wire        m_req_we;
-  wire [31:0] m_req_addr;
-  wire [31:0] m_req_wdata;
-  wire [3:0]  m_req_wstrb;
-  wire        m_done;
-  wire [31:0] m_resp_rdata;
+  // ═══════════════ axi_lite_master → axi_xbar (AXI4-Lite 五通道) ═══════════════
+  wire [31:0] mst_araddr, mst_awaddr, mst_wdata, mst_rdata;
+  wire        mst_arvalid, mst_arready, mst_rvalid, mst_rready;
+  wire [1:0]  mst_rresp;
+  wire        mst_awvalid, mst_awready, mst_wvalid, mst_wready;
+  wire [3:0]  mst_wmask;
+  wire [1:0]  mst_bresp;
+  wire        mst_bvalid, mst_bready;
 
-  // ═══════════════ 合并后的 AXI4-Lite 五通道 ═══════════════
-  wire [31:0] m_araddr, m_awaddr, m_wdata, m_rdata;
-  wire        m_arvalid, m_arready, m_rvalid, m_rready;
-  wire [1:0]  m_rresp;
-  wire        m_awvalid, m_awready, m_wvalid, m_wready;
-  wire [3:0]  m_wmask;
-  wire [1:0]  m_bresp;
-  wire        m_bvalid, m_bready;
-
-  // ═══════════════ LFSR 随机停顿 ═══════════════
-  wire [7:0]  lfsr_val;
-  wire        bus_stall;
+  // ═══════════════ lfsr → axi_lite_master ═══════════════
+  wire [7:0]  lfsr_val;         // lfsr → 停顿阈值比较
+  wire        lfsr_stall;       // → axi_lite_master.stall (随机总线停顿)
 
   // ═══════════════ IDU → 各模块 ═══════════════
-  wire [4:0]  rs1, rs2, rd;
-  wire        rd_en;
-  wire [31:0] imm;
-  wire [3:0]  alu_op;
-  wire        alu_src2_imm, alu_en, alu_src1_pc;
-  wire [2:0]  wb_sel, npc_sel;
-  wire        mem_re, mem_we;
-  wire [1:0]  mem_width;
-  wire        mem_signed;
-  wire [2:0]  branch_type;
-  wire        idu_invalid;
+  wire [4:0]  idu_rs1;          // → RegisterFile.r_addr1
+  wire [4:0]  idu_rs2;          // → RegisterFile.r_addr2
+  wire [4:0]  idu_rd;           // → RegisterFile.w_addr
+  wire        idu_rd_en;        // → RegisterFile.wen (与 ctrl_reg_we 相与)
+  wire [31:0] idu_imm;          // → EXU / WBU
+  wire [3:0]  idu_alu_op;       // → EXU
+  wire        idu_alu_en;       // → EXU
+  wire        idu_alu_src2_imm; // → EXU
+  wire        idu_alu_src1_pc;  // → EXU
+  wire [2:0]  idu_wb_sel;       // → WBU
+  wire [2:0]  idu_npc_sel;      // → IFU (next-pc 选择) / CSRFile (ecall/mret 判定)
+  wire        idu_mem_re;       // → LSU / ctrl (是否进 MEM 拍)
+  wire        idu_mem_we;       // → LSU / ctrl / arbiter
+  wire [1:0]  idu_mem_width;    // → LSU
+  wire        idu_mem_signed;   // → LSU
+  wire [2:0]  idu_branch_type;  // → EXU
+  wire        idu_invalid;      // → ctrl (非法指令)
+  wire [11:0] idu_csr_idx;      // → CSRFile
+  wire        idu_csr_wen;      // → CSRFile
+  wire        idu_csr_s_w;      // → CSRFile (置位/原值写)
 
-  // ═══════════════ 寄存器堆 / EXU / WBU ═══════════════
-  wire [31:0] r_data1, r_data2, alu_result, wb_data;
-  wire        branch_taken;
+  // ═══════════════ RegisterFile / EXU / WBU ═══════════════
+  wire [31:0] rf_rdata1;        // RegisterFile → EXU / CSRFile.csr_wdata
+  wire [31:0] rf_rdata2;        // RegisterFile → LSU.wdata_in
+  wire [31:0] exu_alu_result;   // EXU → IFU (跳转目标) / alu_result_r
+  wire        exu_branch_taken; // EXU → IFU (分支成立)
+  wire [31:0] wbu_wb_data;      // WBU → RegisterFile.w_data
 
-  // ═══════════════ CSR ═══════════════
-  wire [31:0] csr_data, csr_mtvec, csr_mepc;
-  wire [11:0] csr_idx;
-  wire        csr_wen, csr_s_w;
+  // ═══════════════ CSRFile → ═══════════════
+  wire [31:0] csr_data;         // CSRFile → WBU (csr 读值写回 rd)
+  wire [31:0] csr_mtvec;        // CSRFile → IFU (trap 入口)
+  wire [31:0] csr_mepc;         // CSRFile → IFU (mret 返回地址)
+  wire        csr_mstatus_mie;  // CSRFile → 第 4 步生成 irq_taken
+  //  时钟中断相关
+  wire        irq_taken;        // 中断响应判决(assign 在 clint 实例之后)
+  wire [31:0] trap_pc;          // 存进 mepc: 中断→ifu_npc_normal, 异常→ir_pc
 
-  // ═══════════════ ctrl 信号 ═══════════════
-  wire [2:0]  ctrl_state;
-  wire        ctrl_ir_we, ctrl_pc_we, ctrl_reg_we, ctrl_fetch_req, ctrl_mem_req;
-  wire        ctrl_abort;
+  // ═══════════════ ctrl → 各模块 ═══════════════
+  wire        ctrl_at_state_wb; // → CSRFile (CSR 写时机)
+  wire [2:0]  ctrl_state;       // → alu_result_r / mmio_flag_r / state_dbg
+  wire        ctrl_ir_we;       // → IR / ir_pc 锁存
+  wire        ctrl_pc_we;       // → IFU
+  wire        ctrl_reg_we;      // → RegisterFile
+  wire        ctrl_fetch_req;   // → IFU
+  wire        ctrl_mem_req;     // → LSU
+  wire        ctrl_abort;       // → aborted
 
-  // ═══════════════ 未用端口 ═══════════════
-  wire        _unused_rs1_en, _unused_rs2_en, _unused_r_a0;
+  // ═══════════════ 未用端口(保留连接, 避免 PINMISSING) ═══════════════
+  wire        idu_unused_rs1_en;  // IDU → 未用
+  wire        idu_unused_rs2_en;  // IDU → 未用
+  wire [31:0] rf_unused_r_a0;     // RegisterFile → 未用
 
   // ── IFU ── 私有请求接口接 arbiter
   IFU u_ifu (
     .clk(clk), .rst(rst),
     .pc_we(ctrl_pc_we), .fetch_req(ctrl_fetch_req),
-    .alu_result(alu_result), .npc_sel(npc_sel),
-    .branch_taken(branch_taken),
+    .alu_result(exu_alu_result), .npc_sel(idu_npc_sel),
+    .branch_taken(exu_branch_taken),
     .csr_mtvec(csr_mtvec), .csr_mepc(csr_mepc),
+    .irq_taken(irq_taken),                 //改接 irq_taken
     .req_valid(ifu_req_valid),
     .req_addr(ifu_req_addr),
-    .handshake_done(ifu_handshake_done),
-    .resp_rdata(ifu_resp_rdata),
-    .pc(pc), .pc4(pc4), .inst(inst),
+    .handshake_done(arb_ifu_done),
+    .resp_rdata(arb_ifu_rdata),
+    .pc(pc), .pc4(ifu_pc4), .inst(ifu_inst),
+    .npc_normal(ifu_npc_normal),      // 第 4 步: 中断 mepc
     .ifu_done(ifu_done)
   );
 
- // ── LSU（访存控制器：私有请求 → arbiter）──
+  // ── LSU（访存控制器：私有请求 → arbiter）──
   LSU u_lsu (
-    .clk(clk), .rst(rst),
     .mem_req(ctrl_mem_req),
-    .mem_re(mem_re), .mem_we(mem_we),
-    .mem_width(mem_width), .mem_signed(mem_signed),
-    .wdata_in(r_data2), .addr_in(alu_out),
-    .rdata_in(lsu_resp_rdata),
-    .handshake_done(lsu_handshake_done),
+    .mem_re(idu_mem_re), .mem_we(idu_mem_we),
+    .mem_width(idu_mem_width), .mem_signed(idu_mem_signed),
+    .wdata_in(rf_rdata2), .addr_in(alu_result_r),
+    .rdata_in(arb_lsu_rdata),
+    .handshake_done(arb_lsu_done),
     .req_valid(lsu_req_valid),
     .req_addr(lsu_req_addr),
     .req_wdata(lsu_req_wdata),
     .req_wmask(lsu_req_wmask),
     .lsu_done(lsu_done),
-    .rdata_out(mem_rdata)
+    .rdata_out(lsu_rdata)
   );
-
 
   // ── 仲裁器：IFU/LSU 两个 master 合并成一路（IFU 固定优先）──
   arbiter u_arb (
     .clk(clk), .rst(rst),
     .ifu_req_valid(ifu_req_valid), .ifu_req_addr(ifu_req_addr),
-    .ifu_done(ifu_handshake_done), .ifu_resp_rdata(ifu_resp_rdata),
-    .lsu_req_valid(lsu_req_valid), .lsu_req_we(mem_we),
+    .ifu_done(arb_ifu_done), .ifu_resp_rdata(arb_ifu_rdata),
+    .lsu_req_valid(lsu_req_valid), .lsu_req_we(idu_mem_we),
     .lsu_req_addr(lsu_req_addr), .lsu_req_wdata(lsu_req_wdata),
     .lsu_req_wstrb(lsu_req_wmask),
-    .lsu_done(lsu_handshake_done), .lsu_resp_rdata(lsu_resp_rdata),
-    .m_req_valid(m_req_valid), .m_req_we(m_req_we),
-    .m_req_addr(m_req_addr), .m_req_wdata(m_req_wdata),
-    .m_req_wstrb(m_req_wstrb),
-    .m_done(m_done), .m_resp_rdata(m_resp_rdata)
+    .lsu_done(arb_lsu_done), .lsu_resp_rdata(arb_lsu_rdata),
+    .m_req_valid(arb_req_valid), .m_req_we(arb_req_we),
+    .m_req_addr(arb_req_addr), .m_req_wdata(arb_req_wdata),
+    .m_req_wstrb(arb_req_wstrb),
+    .m_done(mst_done), .m_resp_rdata(mst_resp_rdata)
   );
 
   // ── 唯一的 AXI4-Lite 协议适配层（IFU 读 / LSU 读写 共用）──
   axi_lite_master u_master (
     .clk(clk), .rst(rst),
-    .req_valid(m_req_valid), .req_we(m_req_we),
-    .req_addr(m_req_addr), .req_wdata(m_req_wdata), .req_wstrb(m_req_wstrb),
-    .stall(bus_stall),
-    .done(m_done), .resp_rdata(m_resp_rdata),
+    .req_valid(arb_req_valid), .req_we(arb_req_we),
+    .req_addr(arb_req_addr), .req_wdata(arb_req_wdata), .req_wstrb(arb_req_wstrb),
+    .stall(lfsr_stall),
+    .done(mst_done), .resp_rdata(mst_resp_rdata),
     // AR
-    .araddr(m_araddr), .arvalid(m_arvalid), .arready(m_arready),
+    .araddr(mst_araddr), .arvalid(mst_arvalid), .arready(mst_arready),
     // R
-    .rdata(m_rdata), .rvalid(m_rvalid), .rresp(m_rresp), .rready(m_rready),
+    .rdata(mst_rdata), .rvalid(mst_rvalid), .rresp(mst_rresp), .rready(mst_rready),
     // AW
-    .awaddr(m_awaddr), .awvalid(m_awvalid), .awready(m_awready),
+    .awaddr(mst_awaddr), .awvalid(mst_awvalid), .awready(mst_awready),
     // W
-    .wdata(m_wdata), .wvalid(m_wvalid), .wmask(m_wmask), .wready(m_wready),
+    .wdata(mst_wdata), .wvalid(mst_wvalid), .wmask(mst_wmask), .wready(mst_wready),
     // B
-    .bresp(m_bresp), .bvalid(m_bvalid), .bready(m_bready)
+    .bresp(mst_bresp), .bvalid(mst_bvalid), .bready(mst_bready)
   );
 
-  // ── axi_xbar：把 axi_lite_master 的单路 AXI 按地址扇出到 {rtc, uart, mem} ──
+  // ── axi_xbar：把 axi_lite_master 的单路 AXI 按地址扇出到 {rtc, clint, uart, mem} ──
   // 译码/门控/广播/多选全在 xbar 内部。core 只做两件事:
   //   1) xbar 主口 m_* 直接接上面 axi_lite_master 的输出;
   //   2) 三个从设备的端口改接 xbar 从口。
-  // 从设备驱动的信号(arready/rdata/...)仍用原 wire, xbar 驱动侧用新 wire。
   // mem 从口(xbar 驱动侧; xbar 端口叫 mem_*, 这里接到 core 的 dmem_* 线)
   wire [31:0] dmem_araddr, dmem_awaddr, dmem_wdata;
   wire [3:0]  dmem_wmask;
@@ -167,16 +206,22 @@ module core (
   // rtc 从口(xbar 驱动侧, 只读)
   wire [31:0] rtc_araddr;
   wire        rtc_arvalid;
+  // clint 从口(xbar 驱动侧; 含写通道, 路由到 mtimecmp)
+  wire [31:0] clint_araddr;
+  wire        clint_arvalid;
+  wire [31:0] clint_awaddr, clint_wdata;
+  wire        clint_awvalid, clint_wvalid;
+  wire        clint_bready;
   // MMIO 标记(xbar 判定, 供 difftest 跳过比对)
-  wire        mmio_sel;
+  wire        xbar_mmio_sel;
 
   axi_xbar u_xbar (
     // 主口 ← axi_lite_master
-    .m_araddr (m_araddr),  .m_arvalid (m_arvalid),  .m_arready (m_arready),
-    .m_rdata  (m_rdata),   .m_rresp   (m_rresp),    .m_rvalid  (m_rvalid),  .m_rready (m_rready),
-    .m_awaddr (m_awaddr),  .m_awvalid (m_awvalid),  .m_awready (m_awready),
-    .m_wdata  (m_wdata),   .m_wmask   (m_wmask),    .m_wvalid  (m_wvalid),  .m_wready (m_wready),
-    .m_bresp  (m_bresp),   .m_bvalid  (m_bvalid),   .m_bready  (m_bready),
+    .m_araddr (mst_araddr),  .m_arvalid (mst_arvalid),  .m_arready (mst_arready),
+    .m_rdata  (mst_rdata),   .m_rresp   (mst_rresp),    .m_rvalid  (mst_rvalid),  .m_rready (mst_rready),
+    .m_awaddr (mst_awaddr),  .m_awvalid (mst_awvalid),  .m_awready (mst_awready),
+    .m_wdata  (mst_wdata),   .m_wmask   (mst_wmask),    .m_wvalid  (mst_wvalid),  .m_wready (mst_wready),
+    .m_bresp  (mst_bresp),   .m_bvalid  (mst_bvalid),   .m_bready  (mst_bready),
     // 从口 → mem
     .mem_araddr (dmem_araddr),  .mem_arvalid (dmem_arvalid),  .mem_arready (dmem_arready),
     .mem_rdata  (dmem_rdata),   .mem_rresp   (dmem_rresp),    .mem_rvalid  (dmem_rvalid),  .mem_rready (dmem_rready),
@@ -192,8 +237,14 @@ module core (
     // 从口 → rtc（只读）
     .rtc_araddr (rtc_araddr),  .rtc_arvalid (rtc_arvalid),  .rtc_arready (rtc_arready),
     .rtc_rdata  (rtc_rdata),   .rtc_rresp   (rtc_rresp),    .rtc_rvalid  (rtc_rvalid),
+    // 从口 → clint（读 mtime/mtimecmp + 写 mtimecmp）
+    .clint_araddr (clint_araddr),  .clint_arvalid (clint_arvalid),  .clint_arready (clint_arready),
+    .clint_rdata  (clint_rdata),   .clint_rresp   (clint_rresp),    .clint_rvalid  (clint_rvalid),
+    .clint_awaddr (clint_awaddr),  .clint_awvalid (clint_awvalid),  .clint_awready (clint_awready),
+    .clint_wdata  (clint_wdata),   .clint_wvalid  (clint_wvalid),   .clint_wready  (clint_wready),
+    .clint_bresp  (clint_bresp),   .clint_bvalid  (clint_bvalid),   .clint_bready  (clint_bready),
     // MMIO 标记
-    .mmio_sel (mmio_sel)
+    .mmio_sel (xbar_mmio_sel)
   );
 
   // ── LFSR:每拍推进, 按阈值产生随机总线停顿 ──
@@ -205,42 +256,43 @@ module core (
     .en  (1'b1),
     .val (lfsr_val)
   );
-  assign bus_stall = (lfsr_val < 8'd16); //小于16就stall
+  assign lfsr_stall = (lfsr_val < 8'd16); //小于16就stall
 `else
-  assign bus_stall = 1'b0;               // 未开 LFSR: 总线不停顿
+  assign lfsr_stall = 1'b0;               // 未开 LFSR: 总线不停顿
 `endif
-
 
   // ── 控制器 ──
   ctrl u_ctrl (
     .clk(clk), .rst(rst),
-    .idu_mem_re(mem_re), .idu_mem_we(mem_we),
+    .idu_mem_re(idu_mem_re), .idu_mem_we(idu_mem_we),
     .idu_invalid(idu_invalid),
     .ifu_done(ifu_done), .lsu_done(lsu_done),
     .state(ctrl_state),
-    .ir_we(ctrl_ir_we), .pc_we(ctrl_pc_we), .reg_we(ctrl_reg_we),
+    .ir_we(ctrl_ir_we), .pc_we(ctrl_pc_we), .at_state_wb(ctrl_at_state_wb), .reg_we(ctrl_reg_we),
     .fetch_req(ctrl_fetch_req), .mem_req(ctrl_mem_req),
     .aborted(ctrl_abort)
   );
-
-
 
   // ── IR ──
   reg [31:0] IR;
   reg [31:0] ir_pc;          // 锁存当前指令的 PC, 供 ecall/mret 作为 mepc 基准
   always @(posedge clk)
   begin
-    if (ctrl_ir_we) IR    <= inst;
+    if (ctrl_ir_we) IR    <= ifu_inst;
     if (ctrl_ir_we) ir_pc <= pc;   // pc 此时为刚取到的指令地址(FET 阶段未前进)
   end
 
   // ── ALU 结果锁存 ──
-  reg [31:0] alu_out;
+  reg [31:0] alu_result_r;   // EXE 拍锁存 exu_alu_result, 供 MEM 拍访存 / WB 拍写回
   always @(posedge clk)
-    if (ctrl_state == `NPC_EXE) alu_out <= alu_result;
+  begin
+    if (ctrl_state == `ST_EXE)
+    begin
+      alu_result_r <= exu_alu_result;
+    end
+  end
 
-
-  // ── RTC 从设备（墙钟只读）── 段译码/门控已移到 axi_xbar, 这里只接 xbar 从口
+  // ── RTC 从设备（墙钟只读, AM_TIMER_UPTIME 真实时间来源, 0xa0000048）──
   wire        rtc_arready, rtc_rvalid;
   wire [31:0] rtc_rdata;
   wire [1:0]  rtc_rresp;
@@ -252,8 +304,65 @@ module core (
     .rdata  (rtc_rdata),
     .rresp  (rtc_rresp),
     .rvalid (rtc_rvalid),
-    .rready (m_rready)   // rtc 的 rready 不走 xbar(xbar 无 rtc_rready 口), 直接连 master
+    .rready (mst_rready)   // rtc 的 rready 不走 xbar(xbar 无 rtc_rready 口), 直接连 master
   );
+
+
+
+
+  // ── CLINT 从设备（mtime 只读 + mtimecmp 可写, 0xa0000050~5f）──
+  wire        clint_arready, clint_rvalid;
+  wire [31:0] clint_rdata;
+  wire [1:0]  clint_rresp;
+  wire        clint_awready, clint_wready, clint_bvalid;
+  wire [1:0]  clint_bresp;
+  wire        clint_mtip;   // 定时器中断请求, 第 4 步接 irq_taken 判决
+  clint u_clint (
+    .clk    (clk),
+    .rst    (rst),
+    .araddr (clint_araddr),
+    .arvalid(clint_arvalid),
+    .arready(clint_arready),
+    .rdata  (clint_rdata),
+    .rresp  (clint_rresp),
+    .rvalid (clint_rvalid),
+    .rready (mst_rready),  // clint 的 rready 不走 xbar(xbar 无 clint_rready 口), 直接连 master
+    // 写通道 → mtimecmp
+    .awaddr (clint_awaddr), .awvalid(clint_awvalid), .awready(clint_awready),
+    .wdata  (clint_wdata),  .wvalid (clint_wvalid),  .wready (clint_wready),
+    .bresp  (clint_bresp),  .bvalid (clint_bvalid),  .bready (clint_bready),
+    // 中断
+    .mtip   (clint_mtip)
+  );
+ // ── 中断响应判决 ──
+  // 只在 WB 拍响应: 这一拍 reg_we/pc_we/CSR 写同时发生, 是唯一的原子指令边界
+  //   ctrl_at_state_wb : (state == 3'd5), 指令边界
+  //   csr_mstatus_mie  : mstatus.MIE, 软件 iset() 打开才响应
+  //   clint_mtip       : mtime >= mtimecmp, 硬件中断请求
+  // 排除 ecall(3'b100) / mret(3'b101), 否则 mepc 会被写坏:
+  //   ecall: npc_normal 恰好 = mtvec, mepc 会变成 mtvec, 返回地址丢失
+  //   mret : npc_normal 恰好 = mepc,  新 mepc = 旧 mepc, mret 后死循环
+  assign irq_taken = ctrl_at_state_wb
+                  && csr_mstatus_mie
+                  && clint_mtip
+                  && (idu_npc_sel != `NPC_ECALL)
+                  && (idu_npc_sel != `NPC_MRET);
+
+  // 异常存自己(软件 +4 跳过); 中断存下一条(软件绝不能 +4)
+  assign trap_pc   = irq_taken ? ifu_npc_normal : ir_pc;
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // ── UART 从设备（串口，写打印 / 读返回 0）── 段译码/门控已移到 axi_xbar
   wire        uart_arready, uart_rvalid;
@@ -309,72 +418,82 @@ module core (
   // ── IDU ──
   IDU u_idu (
     .inst(IR),
-    .rs1(rs1), .rs2(rs2), .rd(rd),
-    .rs1_en(_unused_rs1_en), .rs2_en(_unused_rs2_en), .rd_en(rd_en),
-    .imm(imm),
-    .alu_op(alu_op), .alu_src2_imm(alu_src2_imm),
-    .alu_en(alu_en), .alu_src1_pc(alu_src1_pc),
-    .wb_sel(wb_sel), .npc_sel(npc_sel),
-    .mem_re(mem_re), .mem_we(mem_we),
-    .mem_width(mem_width), .mem_signed(mem_signed),
-    .branch_type(branch_type), .invalid(idu_invalid),
-    .csr_idx(csr_idx), .csr_wen(csr_wen), .csr_s_w(csr_s_w)
+    .rs1(idu_rs1), .rs2(idu_rs2), .rd(idu_rd),
+    .rs1_en(idu_unused_rs1_en), .rs2_en(idu_unused_rs2_en), .rd_en(idu_rd_en),
+    .imm(idu_imm),
+    .alu_op(idu_alu_op), .alu_src2_imm(idu_alu_src2_imm),
+    .alu_en(idu_alu_en), .alu_src1_pc(idu_alu_src1_pc),
+    .wb_sel(idu_wb_sel), .npc_sel(idu_npc_sel),
+    .mem_re(idu_mem_re), .mem_we(idu_mem_we),
+    .mem_width(idu_mem_width), .mem_signed(idu_mem_signed),
+    .branch_type(idu_branch_type), .invalid(idu_invalid),
+    .csr_idx(idu_csr_idx), .csr_wen(idu_csr_wen), .csr_s_w(idu_csr_s_w)
   );
-
-
-
 
   // ── 寄存器堆 ──
   RegisterFile #(.ADDR_WIDTH(5), .DATA_WIDTH(32)) u_regfile (
     .clk(clk),
-    .w_data(wb_data), .w_addr(rd),
-    .r_addr1(rs1), .r_addr2(rs2),
-    .wen(rd_en && ctrl_reg_we),
-    .r_data1(r_data1), .r_data2(r_data2), .r_a0(_unused_r_a0)
+    .w_data(wbu_wb_data), .w_addr(idu_rd),
+    .r_addr1(idu_rs1), .r_addr2(idu_rs2),
+    .wen(idu_rd_en && ctrl_reg_we),
+    .r_data1(rf_rdata1), .r_data2(rf_rdata2), .r_a0(rf_unused_r_a0)
   );
 
   // ── EXU ──
   EXU u_exu (
-    .rs1_data(r_data1), .rs2_data(r_data2),
-    .imm(imm), .alu_en(alu_en), .alu_op(alu_op),
-    .alu_src2_imm(alu_src2_imm), .alu_src1_pc(alu_src1_pc),
-    .pc(pc), .branch_type(branch_type),
-    .alu_result(alu_result), .branch_taken(branch_taken)
+    .rs1_data(rf_rdata1), .rs2_data(rf_rdata2),
+    .imm(idu_imm), .alu_en(idu_alu_en), .alu_op(idu_alu_op),
+    .alu_src2_imm(idu_alu_src2_imm), .alu_src1_pc(idu_alu_src1_pc),
+    .pc(pc), .branch_type(idu_branch_type),
+    .alu_result(exu_alu_result), .branch_taken(exu_branch_taken)
   );
 
   // ── WBU ──
   WBU u_wbu (
-    .wb_sel(wb_sel), .pc4(pc4),
-    .alu_result(alu_out), .mem_data(mem_rdata),
-    .csr_data(csr_data), .imm(imm),
-    .wb_data(wb_data)
+    .wb_sel(idu_wb_sel), .pc4(ifu_pc4),
+    .alu_result(alu_result_r), .mem_data(lsu_rdata),
+    .csr_data(csr_data), .imm(idu_imm),
+    .wb_data(wbu_wb_data)
   );
 
   // ── CSRFile ──
   CSRFile #(.ADDR_WIDTH(12)) u_CSRFile (
-    .clk(clk), .rst(rst),
-    .csr_wen(csr_wen), .csr_s_w(csr_s_w),
-    .ecall_trap(npc_sel == `NPC_ECALL),
+    .clk(clk), .rst(rst), .at_state_wb(ctrl_at_state_wb),
+    .csr_wen(idu_csr_wen), .csr_s_w(idu_csr_s_w),
+    .ecall_trap(idu_npc_sel == `NPC_ECALL),
     .ebreak_trap(IR == 32'h00100073),
-    .mret_exec(npc_sel == `NPC_MRET),
-    .ecall_pc(ir_pc), .csr_wdata(r_data1), .csr_idx(csr_idx),
+    .mret_exec(idu_npc_sel == `NPC_MRET),
+    .irq_trap(irq_taken),                    // 第 4 步: 改接 irq_taken
+    .ecall_pc(trap_pc), .csr_wdata(rf_rdata1), .csr_idx(idu_csr_idx),
+    .mstatus_mie(csr_mstatus_mie),      // 第 4 步: 用于生成 irq_taken
     .csr_mtvec(csr_mtvec), .csr_mepc(csr_mepc), .csr_data(csr_data)
   );
 
+  // ── 输出打包 ──
+  assign halt      = (IR == 32'h00100073);
   assign ir_dbg    = IR;
   assign state_dbg = ctrl_state;
   assign aborted   = ctrl_abort;   // 非法指令/异常终止
 
   // ── MMIO 检测:供 difftest 跳过外设访问的比对 ──
-  // xbar 判定本次访问是否落在 rtc/uart 外设(mmio_sel), 标记本条指令为 MMIO。
+  // xbar 判定本次访问是否落在 rtc/clint/uart 外设(xbar_mmio_sel), 标记本条指令为 MMIO。
   // EXE 阶段清零, MEM 阶段采样, 指令完成后 C++ 侧读取。
-  reg mmio_flag;
+  reg mmio_flag_r;
   always @(posedge clk)
   begin
-    if (rst)         mmio_flag <= 1'b0;
-    else if (ctrl_state == `NPC_EXE) mmio_flag <= 1'b0;
-    else if (ctrl_state == `NPC_MEM) mmio_flag <= mmio_sel;
+    if (rst)
+    begin
+      mmio_flag_r <= 1'b0;
+    end
+    else if (ctrl_state == `ST_EXE)
+    begin
+      mmio_flag_r <= 1'b0;
+    end
+    else if (ctrl_state == `ST_MEM)
+    begin
+      mmio_flag_r <= xbar_mmio_sel;
+    end
   end
-  assign mmio_dbg = mmio_flag;
+  assign mmio_dbg = mmio_flag_r;
 
 endmodule
