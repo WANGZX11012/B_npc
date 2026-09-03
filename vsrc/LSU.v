@@ -4,9 +4,9 @@
 
 module LSU (
 
-  // Clock & Reset
-  input  wire         clk,
-  input  wire         rst,
+  // // Clock & Reset
+  // input  wire         clk,
+  // input  wire         rst,
 
   // 输入: IDU / ctrl
   input  wire         mem_req,                        // ctrl: MEM 拍
@@ -35,7 +35,8 @@ module LSU (
   // ── wmask: mem_width + addr_in[1:0] → 字节写掩码 ──
   wire [1:0] off = addr_in[1:0];
   reg  [3:0] wmask_gen;
-  always @(*) begin
+  always @(*) 
+  begin
     case (mem_width)
       `MEM_BYTE: wmask_gen = (4'b0001 << off);            // 00→0001 01→0010 10→0100 11→1000
       `MEM_HALF: wmask_gen = off[1] ? 4'b1100 : 4'b0011;  // 半字按 addr[1] 对齐
@@ -53,8 +54,12 @@ module LSU (
   assign  req_wdata = wdata_gen;
 
   // ── load 选字节 + 符号扩展 ──
-  wire [7:0]  lb = rdata_in >> {addr_in[1:0], 3'b0};   // 按 addr 选出目标字节到 [7:0]
-  wire [15:0] lh = rdata_in >> {addr_in[1],   4'b0};   // 按 addr[1] 选出目标半字到 [15:0]
+  // ── load 选字节 + 符号扩展 ──
+  wire [7:0]  lb = rdata_in[{addr_in[1:0], 3'b0} +: 8];    // 按 addr 选出目标字节 
+                      // 以{addr_in[1:0], 3'b0}为base 向上取8位
+  wire [15:0] lh = rdata_in[{addr_in[1],   4'b0} +: 16];   // 按 addr[1] 选出目标半字
+
+
   assign rdata_out = (mem_width == `MEM_BYTE) ? (mem_signed ? {{24{lb[7]}},  lb} : {24'b0, lb}) :
                      (mem_width == `MEM_HALF) ? (mem_signed ? {{16{lh[15]}}, lh} : {16'b0, lh}) :
                      rdata_in;

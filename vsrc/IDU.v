@@ -483,7 +483,7 @@ localparam IMM_J = 3'b100;
 
 
   /*opcode 判断imm 类型*/
-  always@(*) 
+  always @(*)
   begin
     case(opcode)
         7'b0010011: imm_type = IMM_I; // addi, I-type

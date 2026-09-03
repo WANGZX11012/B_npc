@@ -1,4 +1,5 @@
 // ctrl — 多周期 FSM 控制器
+`include "npc_defs.vh"
 
 module ctrl (
 
@@ -21,37 +22,38 @@ module ctrl (
   // 输出: enable signals
   output wire         ir_we,                           // latch IR
   output wire         pc_we,                           // update PC
+  output wire         at_state_wb,                     // when state == WB   
+
   output wire         reg_we,                          // write register file
   output wire         fetch_req,                       // FETCH state → IFU
   output wire         mem_req,                         // MEM state → LSU
   output wire         aborted                          // 非法指令/异常终止(对齐 NEMU_ABORT)
 );
-
-  localparam [2:0] IDLE = 0, FET = 1, DEC = 2, EXE = 3, MEM = 4, WB = 5, ERR = 6;
   reg [2:0] next_state;
 
   always @(posedge clk)
-    state <= rst ? IDLE : next_state;
+    state <= rst ? `ST_IDLE : next_state;
 
   always @(*)
   begin
     case (state)
-      IDLE: next_state = FET;
-      FET:  next_state = ifu_done ? DEC : FET;
-      DEC:  next_state = idu_invalid ? ERR : EXE;   // 非法指令直接转入 ERR 停机
-      EXE:  next_state = (idu_mem_re || idu_mem_we) ? MEM : WB;
-      MEM:  next_state = lsu_done ? WB : MEM;
-      WB:   next_state = FET;
-      ERR:  next_state = ERR;                         // 卡死, 直到复位
-      default: next_state = IDLE;
+      `ST_IDLE: next_state = `ST_FET;
+      `ST_FET:  next_state = ifu_done ? `ST_DEC : `ST_FET;
+      `ST_DEC:  next_state = idu_invalid ? `ST_ERR : `ST_EXE;   // 非法指令直接转入 ERR 停机
+      `ST_EXE:  next_state = (idu_mem_re || idu_mem_we) ? `ST_MEM : `ST_WB;
+      `ST_MEM:  next_state = lsu_done ? `ST_WB : `ST_MEM;
+      `ST_WB:   next_state = `ST_FET;
+      `ST_ERR:  next_state = `ST_ERR;                         // 卡死, 直到复位
+      default:   next_state = `ST_IDLE;
     endcase
   end
 
-  assign fetch_req = (state == FET);
-  assign mem_req   = (state == MEM);
-  assign ir_we     = ifu_done && (state == FET);
-  assign pc_we     = (state == WB);   // WB 阶段更新 PC: 此时 pc_reg 仍为本条地址, pc4=pc+4 正确写回 ra; posedge 后 FET 用新 PC
-  assign reg_we    = (state == WB);
-  assign aborted   = (state == ERR);  // 对齐 NEMU 的 NEMU_ABORT
+  assign fetch_req    = (state == `ST_FET);
+  assign mem_req      = (state == `ST_MEM);
+  assign ir_we        = ifu_done && (state == `ST_FET);
+  assign pc_we        = (state == `ST_WB);   // WB 阶段更新 PC: 此时 pc_reg 仍为本条地址, pc4=pc+4 正确写回 ra; posedge 后 FET 用新 PC
+  assign at_state_wb  = (state == `ST_WB);
+  assign reg_we       = (state == `ST_WB);
+  assign aborted      = (state == `ST_ERR);  // 对齐 NEMU 的 NEMU_ABORT
 
 endmodule

@@ -29,7 +29,9 @@
 `define ALU_SRL  4'b1000
 `define ALU_SRA  4'b1001
 
-// Next-PC / 跳转选择编码
+// Next-PC 选择编码（只用于 npc_sel 信号：IDU 产生，IFU 译码）
+// 与下面的 ST_* 是两个独立编码空间，数值都从 0 开始但永不互相比较：
+//   npc_sel 只和 NPC_* 比，state 只和 ST_* 比。
 `define NPC_PC4   3'b000
 `define NPC_JALR  3'b001
 `define NPC_JAL   3'b010
@@ -37,14 +39,14 @@
 `define NPC_ECALL 3'b100
 `define NPC_MRET  3'b101 
 
-// 多周期状态编码（ctrl.v / core.v 共用）
-`define NPC_IDLE  3'd0
-`define NPC_FET   3'd1
-`define NPC_DEC   3'd2
-`define NPC_EXE   3'd3
-`define NPC_MEM   3'd4
-`define NPC_WB    3'd5
-`define NPC_ERR   3'd6   // 非法指令/异常终止：卡死在此，abort 拉高
+// 多周期状态机编码（只用于 state 信号：ctrl.v 产生，core.v 观测）
+`define ST_IDLE  3'd0
+`define ST_FET   3'd1
+`define ST_DEC   3'd2
+`define ST_EXE   3'd3
+`define ST_MEM   3'd4
+`define ST_WB    3'd5
+`define ST_ERR   3'd6   // 非法指令/异常终止：卡死在此，abort 拉高
 
 // 分支类型编码
 `define BR_NONE 3'b000
@@ -54,6 +56,14 @@
 `define BR_BGEU 3'b011
 `define BR_BLT  3'b100
 `define BR_BLTU 3'b101
-// `BR_BEQ` already defined above; duplicate removed
+
+// Trap 原因编码（mcause 取值, CSRFile 专用）
+// bit31 = 1 表示中断, 0 表示异常; bit[30:0] 为异常码
+`define MCAUSE_BREAK    32'd3       //  断点 ebreak  异常
+`define MCAUSE_ECALL    32'd11      //  ecall       异常
+`define MCAUSE_MTIMER   32'h8000_0007   //  时钟     中断
+
+
+
 
 `endif

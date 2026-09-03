@@ -1,23 +1,30 @@
 //原子性读写的CSR寄存器 要么完全执行成功 要么完全不执行
-
+//信号来自于IDU
+ 
+`include "npc_defs.vh"
 module CSRFile#(
     parameter ADDR_WIDTH = 12
 ) (
     //不需要读使能
     input           clk,
-    input  wire         rst,
+    input           rst,
+    input           at_state_wb,   //控制CSR写入时机 来自ctrl模块         
+
     input           csr_wen,
     input           ecall_trap,   //trap 信号相当于 NO
     input           ebreak_trap,  //ebreak 断点异常 (mcause=3)
     input           mret_exec,    //mret 指令执行，恢复 mstatus
+    input           irq_trap,     // interupt request 定时器中断 
+    
     input  [31:0]   ecall_pc,      //ecall 时的 PC，保存到 mepc
     input  [31:0]   csr_wdata,
     input  [11:0]   csr_idx,
     input           csr_s_w,      //是否置位的控制位
 
-    output [31:0]   csr_mtvec, //输出的mtvec值
-    output [31:0]   csr_mepc,  // 输出的mepc值，供mret/IFU使用
-    output [31:0]   csr_data
+    output [31:0]   csr_mtvec, // 出事了去哪里 输出mtvec值 
+    output [31:0]   csr_mepc,  // 出事前的pc 方便回来 输出的mepc值，供mret/IFU使用
+    output [31:0]   csr_data,
+    output          mstatus_mie //mstatus.MIE, 供 core 判定 irq_taken
     
 
 );
@@ -53,29 +60,37 @@ module CSRFile#(
 
         else 
         begin
-            if(ecall_trap)
+            if(ecall_trap && at_state_wb)
             begin
-                mcause <= 32'd11;       // M-mode ecall
+                mcause <= `MCAUSE_ECALL;       // M-mode ecall
                 mepc <= ecall_pc;
                 mstatus[7] <= mstatus[3];       // MPIE <- MIE
                 mstatus[3] <= 1'b0;             // MIE  <- 0（关中断）
                 mstatus[12:11] <= 2'b11;        // MPP  <- M-mode（RISC-V 规范：trap 时保存当前特权级）
             end
-            else if(ebreak_trap)
+            else if(ebreak_trap && at_state_wb)
             begin
-                mcause <= 32'd3;        // Breakpoint
+                mcause <= `MCAUSE_BREAK;        // Breakpoint
                 mepc <= ecall_pc;
                 mstatus[7] <= mstatus[3];       // MPIE <- MIE
                 mstatus[3] <= 1'b0;             // MIE  <- 0
                 mstatus[12:11] <= 2'b11;        // MPP  <- M-mode
             end
-            else if(mret_exec)
+            else if(mret_exec && at_state_wb)
             begin
                 mstatus[3]   <= mstatus[7];     // MIE  <- MPIE（恢复中断）
                 mstatus[7]   <= 1'b1;           // MPIE <- 1
                 mstatus[12:11] <= 2'b00;        // MPP  <- 0（最低特权级）
             end
-            else if (csr_wen) 
+            else if (irq_trap && at_state_wb)
+            begin
+                mcause <= `MCAUSE_MTIMER;   // 机器模式定时器中断 (bit31=1)
+                mepc   <= ecall_pc;          // 中断在指令边界响应: core 传入的是 npc_noirq
+                mstatus[7] <= mstatus[3];    // MPIE <- MIE
+                mstatus[3] <= 1'b0;          // MIE  <- 0 (关中断, 天然不嵌套)
+                mstatus[12:11] <= 2'b11;     // MPP  <- M-mode
+            end
+            else if (csr_wen && at_state_wb) //写值CSR指令
             begin
             /* verilator lint_off CASEINCOMPLETE  */ 
             case (csr_idx)
@@ -106,9 +121,11 @@ module CSRFile#(
 
    end
 
-    assign  csr_data = csr_read;
+    assign csr_data = csr_read;
     assign csr_mtvec = mtvec;
     assign csr_mepc  = mepc;    //不需要+4 am的traps已经做了
+    assign mstatus_mie = mstatus[3];   // 把 MIE 位引出去 是否启用中断
+
 
 endmodule
 
