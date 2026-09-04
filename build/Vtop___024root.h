@@ -37,6 +37,7 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop___024root final : public VerilatedModule
         CData/*0:0*/ top__DOT__u_core__DOT__idu_mem_we;
         CData/*2:0*/ top__DOT__u_core__DOT__idu_branch_type;
         CData/*0:0*/ top__DOT__u_core__DOT__idu_csr_wen;
+        CData/*0:0*/ top__DOT__u_core__DOT__irq_taken;
         CData/*2:0*/ top__DOT__u_core__DOT__ctrl_state;
         CData/*0:0*/ top__DOT__u_core__DOT__ctrl_ir_we;
         CData/*0:0*/ top__DOT__u_core__DOT__dmem_awvalid;
@@ -61,6 +62,7 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop___024root final : public VerilatedModule
         CData/*0:0*/ top__DOT__u_core__DOT__u_xbar__DOT__ar_mem;
         CData/*2:0*/ top__DOT__u_core__DOT__u_ctrl__DOT__next_state;
         CData/*0:0*/ top__DOT__u_core__DOT__u_clint__DOT__aw_half;
+        CData/*0:0*/ top__DOT__u_core__DOT__u_clint__DOT__mtip_temp;
         CData/*0:0*/ top__DOT__u_core__DOT__u_mem__DOT__aw_recv;
         CData/*3:0*/ top__DOT__u_core__DOT__u_mem__DOT__w_mask_latch;
         CData/*0:0*/ top__DOT__u_core__DOT__u_mem__DOT__rd_delay;
@@ -81,10 +83,10 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop___024root final : public VerilatedModule
         CData/*0:0*/ top__DOT__u_core__DOT__u_idu__DOT__is_lui;
         CData/*0:0*/ top__DOT__u_core__DOT__u_idu__DOT__is_lbu;
         CData/*0:0*/ top__DOT__u_core__DOT__u_idu__DOT__is_lw;
-        CData/*0:0*/ top__DOT__u_core__DOT__u_idu__DOT__is_lb;
-        CData/*0:0*/ top__DOT__u_core__DOT__u_idu__DOT__is_lh;
     };
     struct {
+        CData/*0:0*/ top__DOT__u_core__DOT__u_idu__DOT__is_lb;
+        CData/*0:0*/ top__DOT__u_core__DOT__u_idu__DOT__is_lh;
         CData/*0:0*/ top__DOT__u_core__DOT__u_idu__DOT__is_lhu;
         CData/*0:0*/ top__DOT__u_core__DOT__u_idu__DOT__is_ebreak;
         CData/*0:0*/ top__DOT__u_core__DOT__u_idu__DOT__is_csrrs;
@@ -142,16 +144,17 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop___024root final : public VerilatedModule
         IData/*31:0*/ top__DOT__u_core__DOT__rf_rdata1;
         IData/*31:0*/ top__DOT__u_core__DOT__exu_alu_result;
         IData/*31:0*/ top__DOT__u_core__DOT__wbu_wb_data;
+        IData/*31:0*/ top__DOT__u_core__DOT__trap_pc;
         IData/*31:0*/ top__DOT__u_core__DOT__IR;
         IData/*31:0*/ top__DOT__u_core__DOT__ir_pc;
         IData/*31:0*/ top__DOT__u_core__DOT__alu_result_r;
         IData/*31:0*/ top__DOT__u_core__DOT__rtc_rdata;
-        IData/*31:0*/ top__DOT__u_core__DOT__clint_rdata;
-        IData/*31:0*/ top__DOT__u_core__DOT__dmem_rdata;
-        IData/*31:0*/ top__DOT__u_core__DOT__u_ifu__DOT__pc_reg;
     };
     struct {
-        IData/*31:0*/ top__DOT__u_core__DOT__u_ifu__DOT__next_pc;
+        IData/*31:0*/ top__DOT__u_core__DOT__clint_rdata;
+        IData/*31:0*/ top__DOT__u_core__DOT__dmem_rdata;
+        IData/*31:0*/ top__DOT__u_core__DOT__u_ifu__DOT__npc_normal;
+        IData/*31:0*/ top__DOT__u_core__DOT__u_ifu__DOT__pc_reg;
         IData/*31:0*/ top__DOT__u_core__DOT__u_mem__DOT__aw_addr_latch;
         IData/*31:0*/ top__DOT__u_core__DOT__u_exu__DOT__rs2_data;
         IData/*31:0*/ top__DOT__u_core__DOT__u_CSRFile__DOT__csr_read;
