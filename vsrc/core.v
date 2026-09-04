@@ -104,7 +104,7 @@ module core (
   wire [31:0] csr_data;         // CSRFile → WBU (csr 读值写回 rd)
   wire [31:0] csr_mtvec;        // CSRFile → IFU (trap 入口)
   wire [31:0] csr_mepc;         // CSRFile → IFU (mret 返回地址)
-  wire        csr_mstatus_mie;  // CSRFile → 第 4 步生成 irq_taken
+  wire        csr_mstatus_mie;  // CSRFile → CSRFile → irq_taken 判决
   //  时钟中断相关
   wire        irq_taken;        // 中断响应判决(assign 在 clint 实例之后)
   wire [31:0] trap_pc;          // 存进 mepc: 中断→ifu_npc_normal, 异常→ir_pc
@@ -131,13 +131,13 @@ module core (
     .alu_result(exu_alu_result), .npc_sel(idu_npc_sel),
     .branch_taken(exu_branch_taken),
     .csr_mtvec(csr_mtvec), .csr_mepc(csr_mepc),
-    .irq_taken(irq_taken),                 //改接 irq_taken
+    .irq_taken(irq_taken),                 // 中断行为 劫持取指
     .req_valid(ifu_req_valid),
     .req_addr(ifu_req_addr),
     .handshake_done(arb_ifu_done),
     .resp_rdata(arb_ifu_rdata),
     .pc(pc), .pc4(ifu_pc4), .inst(ifu_inst),
-    .npc_normal(ifu_npc_normal),      // 第 4 步: 中断 mepc
+    .npc_normal(ifu_npc_normal),      // 未被中断劫持的 next-pc, 中断时作 mepc
     .ifu_done(ifu_done)
   );
 
@@ -307,9 +307,6 @@ module core (
     .rready (mst_rready)   // rtc 的 rready 不走 xbar(xbar 无 rtc_rready 口), 直接连 master
   );
 
-
-
-
   // ── CLINT 从设备（mtime 只读 + mtimecmp 可写, 0xa0000050~5f）──
   wire        clint_arready, clint_rvalid;
   wire [31:0] clint_rdata;
@@ -346,7 +343,8 @@ module core (
                   && csr_mstatus_mie
                   && clint_mtip
                   && (idu_npc_sel != `NPC_ECALL)
-                  && (idu_npc_sel != `NPC_MRET);
+                  && (idu_npc_sel != `NPC_MRET)
+                  && !idu_csr_wen;  //  CSR 写指令的WB拍不响应中断
 
   // 异常存自己(软件 +4 跳过); 中断存下一条(软件绝不能 +4)
   assign trap_pc   = irq_taken ? ifu_npc_normal : ir_pc;
@@ -463,9 +461,9 @@ module core (
     .ecall_trap(idu_npc_sel == `NPC_ECALL),
     .ebreak_trap(IR == 32'h00100073),
     .mret_exec(idu_npc_sel == `NPC_MRET),
-    .irq_trap(irq_taken),                    // 第 4 步: 改接 irq_taken
+    .irq_trap(irq_taken),                 
     .ecall_pc(trap_pc), .csr_wdata(rf_rdata1), .csr_idx(idu_csr_idx),
-    .mstatus_mie(csr_mstatus_mie),      // 第 4 步: 用于生成 irq_taken
+    .mstatus_mie(csr_mstatus_mie),     
     .csr_mtvec(csr_mtvec), .csr_mepc(csr_mepc), .csr_data(csr_data)
   );
 
