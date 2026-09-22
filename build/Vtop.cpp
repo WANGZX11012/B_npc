@@ -14,7 +14,7 @@ Vtop::Vtop(VerilatedContext* _vcontextp__, const char* _vcname__)
     , halt{vlSymsp->TOP.halt}
     , aborted{vlSymsp->TOP.aborted}
     , state_dbg{vlSymsp->TOP.state_dbg}
-    , stall_ifu{vlSymsp->TOP.stall_ifu}
+    , inst_retire{vlSymsp->TOP.inst_retire}
     , mmio_dbg{vlSymsp->TOP.mmio_dbg}
     , pc{vlSymsp->TOP.pc}
     , ir_dbg{vlSymsp->TOP.ir_dbg}

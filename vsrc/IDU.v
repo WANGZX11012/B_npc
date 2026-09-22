@@ -479,7 +479,7 @@ localparam IMM_J = 3'b100;
 
   // csrrw 总是写 CSR；csrrs 仅在 rs1≠x0 时写（RISC-V 规范要求 rs1=x0 时只读不写）
   assign csr_wen = is_csrrw | (is_csrrs & (rs1 != 5'b0));
-  assign csr_s_w = is_csrrs ? 1 : 0 ; //1代表要和rs1或
+  assign csr_s_w = is_csrrs ? 1'b1 : 1'b0 ; //1代表要和rs1或
 
 
   /*opcode 判断imm 类型*/

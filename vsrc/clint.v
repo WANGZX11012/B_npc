@@ -1,9 +1,7 @@
 // CLINT — 时钟中断控制器 设备有写数据的部分
 // AXI4-Lite 接口
 //   mtime[63:0] 每周期 +1（64 位避免 32 位溢出）。
-//   偏移 +0 (0xa0000050) = mtime[31:0]  低 32 位 只读
-//   偏移 +4 (0xa0000054) = mtime[63:32] 高 32 位 只读
-//   mtimecmp 时钟中断比较寄存器：低32位 0xa0000058 高32位 0xa000005c 读写
+//   mtimecmp 时钟中断比较寄存器：0x0200_4000 / 0x0200_4004。 读写
 
 //   软件分两次读低/高 32 位组合成 64 位 uptime，再按时钟频率换算成真实时间。
 
@@ -59,12 +57,13 @@ module clint (
   initial mtimecmp = 64'hffff_ffff_ffff_ffff;
 
   // AW 握手拍是协议保证 awaddr 有效的最后一拍, 在此登记"这次写哪个半区"
-  reg aw_half;              // 0=低 32 位(0xa0000058), 1=高 32 位(0xa000005c)
+  reg aw_half;              // 0=0x0200_4000(mtimecmp 低), 1=0x0200_4004(mtimecmp 高)
+  wire aw_is_cmp = (awaddr[15:2] == 14'h1000) || (awaddr[15:2] == 14'h1001);//保证写的是mtimecmp
   always @(posedge clk)
   begin
     if (rst)
       aw_half <= 1'b0;
-    else if (awvalid && awready)
+    else if (awvalid && awready && aw_is_cmp)
       aw_half <= awaddr[2];
   end
 
@@ -73,7 +72,7 @@ module clint (
   begin
     if (rst)
       mtimecmp <= 64'hffff_ffff_ffff_ffff;
-    else if (wvalid && wready)
+    else if (wvalid && wready && aw_is_cmp)
     begin
       if (aw_half)
         mtimecmp[63:32] <= wdata;
@@ -103,12 +102,14 @@ module clint (
     end
     else if (arvalid && arready)
     begin
-      case (araddr[3:2])
-        2'b00:   rdata <= mtime[31:0];      // +0x00 mtime 低 32 位
-        2'b01:   rdata <= mtime[63:32];     // +0x04 mtime 高 32 位
-        2'b10:   rdata <= mtimecmp[31:0];   // +0x08 mtimecmp 低 32 位
-        default: rdata <= mtimecmp[63:32];  // +0x0c mtimecmp 高 32 位
+      case (araddr[15:2])
+        14'h2FFE: rdata <= mtime[31:0];
+        14'h2FFF: rdata <= mtime[63:32];
+        14'h1000: rdata <= mtimecmp[31:0];
+        14'h1001: rdata <= mtimecmp[63:32];
+        default:  rdata <= 32'h0;         // 区域内其它地址: 返回 0
       endcase
+
       rvalid <= 1'b1;
     end
     else if (rvalid && rready)
@@ -128,6 +129,7 @@ module clint (
   end
 
   assign mtip = mtip_temp;   // 打一拍, 防止比较器毛刺
+  // assign mtip = 1'b0;
 
 
 

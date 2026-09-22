@@ -42,7 +42,7 @@ long long rtc_time_us()
 void uart_putchar(unsigned char c)
 {
   putchar(c);
-  fflush(stdout);
+  fflush(stdout);  //stdout 有缓冲
 }
 
 void npc_init(int argc, char *argv[]) 
@@ -92,13 +92,12 @@ void npc_exec_inst(void) //走完一条指令 500是一条指令的上限时钟�
 {
   // run cycles until state returns to FET (1) or halt
   int cnt = 0;
-  uint8_t prev = top->state_dbg; //prev 不准确 应该是当前的状态
+  // 执行一次时钟周期后 再看条件 这样来推进时钟
   do 
   {
     npc_cycle(); //一次时钟周期 刷新电路状态
-    prev = top->state_dbg;
   } 
-  while (prev != 1 && !top->halt && !top->aborted && ++cnt < 500);
+  while (!top->inst_retire && !top->halt && !top->aborted && ++cnt < 500);
 }
 
 void npc_cont(void) {
