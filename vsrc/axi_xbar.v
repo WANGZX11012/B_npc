@@ -96,12 +96,12 @@ module axi_xbar(
 
  wire ar_uart = (m_araddr[31:3] == 29'h1400007f);  //0xa00003f8~ff, 与 NEMU serial 一致
  wire ar_rtc   = (m_araddr[31:3] == 29'h14000009); //0xa0000048~4f, RTC 墙钟
- wire ar_clint = (m_araddr[31:3] == 29'h1400000a) || (m_araddr[31:3] == 29'h1400000b); //0xa0000050~5f, CLINT mtime(50,54) + mtimecmp(58,5c)
+ wire ar_clint = (m_araddr[31:16] == 16'h0200);   // CLINT 区: 0x0200_0000 ~ 0x0200_ffff
  wire ar_mem = (m_araddr[31:24] >= 8'h80) && (m_araddr[31:24] <=8'h87);
 
  wire aw_uart = (m_awaddr[31:3] == 29'h1400007f);  //写串口 0xa00003f8~ff
  wire aw_rtc   = (m_awaddr[31:3] == 29'h14000009); //写 rtc（只读, 走默认 DECERR）
- wire aw_clint = (m_awaddr[31:3] == 29'h1400000b); //写 clint: 只路由 mtimecmp(0xa0000058~5f); 写 mtime(0x50~57) 落默认 DECERR
+ wire aw_clint = (m_awaddr[31:16] == 16'h0200);
  wire aw_mem = (m_awaddr[31:24] >= 8'h80) && (m_awaddr[31:24] <=8'h87);
 
  assign mem_arvalid = ar_mem && m_arvalid;

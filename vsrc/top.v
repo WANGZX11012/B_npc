@@ -6,19 +6,20 @@ module top (
   output wire [31:0]  pc,
   output wire [31:0]  ir_dbg,        // IR for monitor
   output wire [2:0]   state_dbg,      // ctrl_state for monitor
-  output wire         stall_ifu,      // IFU LFSR stall
+  output wire         inst_retire,    
   output wire         mmio_dbg       // 本条指令是否访问外设(difftest)
 );
 
   core u_core (
-    .clk       (clk),
-    .rst     (rst),
-    .pc        (pc),
-    .halt      (halt),
-    .aborted   (aborted),
-    .ir_dbg    (ir_dbg),
-    .state_dbg (state_dbg),
-    .mmio_dbg  (mmio_dbg)
+    .clk            (clk),
+    .rst            (rst),
+    .pc             (pc),
+    .halt           (halt),
+    .aborted        (aborted),
+    .ir_dbg         (ir_dbg),
+    .state_dbg      (state_dbg),
+    .inst_retire    (inst_retire),
+    .mmio_dbg       (mmio_dbg)
   );
 
 endmodule
