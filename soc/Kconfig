@@ -1,0 +1,12 @@
+mainmenu "ysyxSoC simulation configuration menu"
+
+menu "Testing and Debuging"
+
+config DIFFTEST
+    bool "Enable differencial testing"
+    default n
+    help
+        Use Nemu as reference for differencial testing
+
+endmenu
+

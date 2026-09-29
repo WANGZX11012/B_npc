@@ -1,5 +1,4 @@
 `include "npc_defs.vh"
-
 // 命名约定: 内部连线一律带"来源模块"前缀, 一眼看出信号从哪来、去哪里
 //   ifu_*   IFU        输出
 //   lsu_*   LSU        输出
@@ -71,6 +70,8 @@ module core (
   output reg    inst_retire, // 指令完成标志
   output        mmio_dbg     // 本条指令是否访问了外设(供 difftest 跳过比对)
 );
+
+
 
   // ═══════════════ IFU ↔ arbiter ═══════════════
   wire [31:0] ifu_pc4;          // IFU → WBU (jal/jalr 写 rd = pc+4)
@@ -617,11 +618,6 @@ module core (
 `endif
 
 `endif
-
-
-
-
-
   // 返回给 axi_lite_master 的应答多选（含未命中地址的 DECERR 兜底）已整体移入 axi_xbar。
 
   // ═══════════════════════════════════════════════════════════════
@@ -672,6 +668,8 @@ module core (
       inst_retire <= retire;
     end
   end
+
+`include "core_dbg.vh"
 
 endmodule
 
