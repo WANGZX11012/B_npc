@@ -18,6 +18,10 @@
 #include "Vtop___024unit.h"
 
 // DPI TYPES for DPI Export callbacks (Internal use)
+using Vtop__Vcb_npc_dbg_gpr_t = void (*) (Vtop__Syms* __restrict vlSymsp, IData/*31:0*/ i, IData/*31:0*/ &npc_dbg_gpr__Vfuncrtn);
+using Vtop__Vcb_npc_dbg_inst_pc_t = void (*) (Vtop__Syms* __restrict vlSymsp, IData/*31:0*/ &npc_dbg_inst_pc__Vfuncrtn);
+using Vtop__Vcb_npc_dbg_pc_t = void (*) (Vtop__Syms* __restrict vlSymsp, IData/*31:0*/ &npc_dbg_pc__Vfuncrtn);
+using Vtop__Vcb_npc_dbg_retire_t = void (*) (Vtop__Syms* __restrict vlSymsp, IData/*31:0*/ &npc_dbg_retire__Vfuncrtn);
 
 // SYMS CLASS (contains all model state)
 class alignas(VL_CACHE_LINE_BYTES) Vtop__Syms final : public VerilatedSyms {
@@ -30,6 +34,9 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop__Syms final : public VerilatedSyms {
     // MODULE INSTANCE STATE
     Vtop___024root                 TOP;
     Vtop___024unit                 TOP____024unit;
+
+    // SCOPE NAMES
+    VerilatedScope __Vscope_top__u_core;
 
     // CONSTRUCTORS
     Vtop__Syms(VerilatedContext* contextp, const char* namep, Vtop* modelp);

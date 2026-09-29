@@ -8,7 +8,8 @@ Vtop__ALL.o: Vtop__ALL.cpp Vtop.cpp Vtop__pch.h \
  /usr/local/share/verilator/include/verilated.h \
  /usr/local/share/verilator/include/verilated_sym_props.h \
  /usr/local/share/verilator/include/vltstd/svdpi.h Vtop__Syms.h Vtop.h \
- Vtop___024root.h Vtop___024unit.h Vtop___024root__0.cpp \
- Vtop___024unit__0.cpp Vtop__Dpi.cpp Vtop__Dpi.h Vtop__ConstPool_0.cpp \
- Vtop___024root__Slow.cpp Vtop___024root__0__Slow.cpp \
- Vtop___024unit__Slow.cpp Vtop___024unit__0__Slow.cpp Vtop__Syms.cpp
+ Vtop___024root.h Vtop___024unit.h Vtop__Dpi_Export__0.cpp \
+ Vtop___024root__0.cpp Vtop___024unit__0.cpp Vtop__Dpi.cpp Vtop__Dpi.h \
+ Vtop__ConstPool_0.cpp Vtop___024root__Slow.cpp \
+ Vtop___024root__0__Slow.cpp Vtop___024unit__Slow.cpp \
+ Vtop___024unit__0__Slow.cpp Vtop__Syms.cpp

@@ -258,11 +258,11 @@ VL_ATTR_COLD void Vtop___024root___stl_sequent__TOP__0(Vtop___024root* vlSelf) {
         ((IData)(vlSelfRef.top__DOT__u_core__DOT__mst_done) 
          & (IData)(vlSelfRef.top__DOT__u_core__DOT__u_arb__DOT__sel_is_ifu));
     if (vlSelfRef.top__DOT__u_core__DOT__arb_ifu_done) {
-        vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__out_pc 
+        vlSelfRef.top__DOT__u_core__DOT__ifu_out_pc 
             = vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__pc_reg;
         vlSelfRef.ir_dbg = vlSelfRef.top__DOT__u_core__DOT__arb_ifu_rdata;
     } else {
-        vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__out_pc 
+        vlSelfRef.top__DOT__u_core__DOT__ifu_out_pc 
             = vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__hold_pc;
         vlSelfRef.ir_dbg = vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__hold_inst;
     }
@@ -1223,7 +1223,7 @@ VL_ATTR_COLD void Vtop___024root___stl_sequent__TOP__0(Vtop___024root* vlSelf) {
     vlSelfRef.__Vfunc_top__DOT__u_core__DOT__u_wbu__DOT__wb_func__1__i_alu_result 
         = vlSelfRef.top__DOT__u_core__DOT__u_ex_mem__DOT__result_r;
     vlSelfRef.__Vfunc_top__DOT__u_core__DOT__u_wbu__DOT__wb_func__1__i_pc4 
-        = ((IData)(4U) + vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__out_pc);
+        = ((IData)(4U) + vlSelfRef.top__DOT__u_core__DOT__ifu_out_pc);
     vlSelfRef.__Vfunc_top__DOT__u_core__DOT__u_wbu__DOT__wb_func__1__i_wb_sel 
         = (((IData)(vlSelfRef.top__DOT__u_core__DOT__u_idu__DOT__is_add) 
             | ((IData)(vlSelfRef.top__DOT__u_core__DOT__u_idu__DOT__is_addi) 
@@ -1301,7 +1301,7 @@ VL_ATTR_COLD void Vtop___024root___stl_sequent__TOP__0(Vtop___024root* vlSelf) {
                         ? vlSelfRef.top__DOT__u_core__DOT__u_CSRFile__DOT__mtvec
                         : ((5U == (IData)(vlSelfRef.top__DOT__u_core__DOT__u_idu__DOT__npc_sel))
                             ? vlSelfRef.top__DOT__u_core__DOT__u_CSRFile__DOT__mepc
-                            : ((IData)(4U) + vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__out_pc))))));
+                            : ((IData)(4U) + vlSelfRef.top__DOT__u_core__DOT__ifu_out_pc))))));
     vlSelfRef.__Vtableidx2 = (0x00000020U | (((((((~ (IData)(vlSelfRef.top__DOT__u_core__DOT__u_arb__DOT__sel_is_ifu)) 
                                                   & (IData)(vlSelfRef.top__DOT__u_core__DOT__u_idu__DOT__mem_we)) 
                                                  << 5U) 
@@ -1424,7 +1424,7 @@ VL_ATTR_COLD void Vtop___024root___stl_sequent__TOP__0(Vtop___024root* vlSelf) {
         [vlSelfRef.__Vtableidx3];
     vlSelfRef.top__DOT__u_core__DOT__trap_pc = ((IData)(vlSelfRef.top__DOT__u_core__DOT__irq_taken)
                                                  ? vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__npc_normal
-                                                 : vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__out_pc);
+                                                 : vlSelfRef.top__DOT__u_core__DOT__ifu_out_pc);
 }
 
 VL_ATTR_COLD void Vtop___024root___eval_stl(Vtop___024root* vlSelf) {
@@ -1500,6 +1500,7 @@ VL_ATTR_COLD void Vtop___024root___ctor_var_reset(Vtop___024root* vlSelf) {
     vlSelf->top__DOT__u_core__DOT__ifu_req_valid = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 11847693672519699539ull);
     vlSelf->top__DOT__u_core__DOT__arb_ifu_done = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 4736210375530174058ull);
     vlSelf->top__DOT__u_core__DOT__arb_ifu_rdata = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 18366633088242321816ull);
+    vlSelf->top__DOT__u_core__DOT__ifu_out_pc = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 8103902462584048094ull);
     vlSelf->top__DOT__u_core__DOT__arb_req_addr = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 3515671207439105773ull);
     vlSelf->top__DOT__u_core__DOT__arb_req_wdata = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 762008033952805550ull);
     vlSelf->top__DOT__u_core__DOT__mst_done = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 3820137337326360090ull);
@@ -1537,7 +1538,6 @@ VL_ATTR_COLD void Vtop___024root___ctor_var_reset(Vtop___024root* vlSelf) {
     vlSelf->top__DOT__u_core__DOT__mem_stage_active = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 15068085029262538381ull);
     vlSelf->top__DOT__u_core__DOT__irq_taken = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 13368098997016524428ull);
     vlSelf->top__DOT__u_core__DOT__trap_pc = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 908221045352699536ull);
-    vlSelf->top__DOT__u_core__DOT__u_ifu__DOT__out_pc = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 9634648974612052258ull);
     vlSelf->top__DOT__u_core__DOT__u_ifu__DOT__npc_normal = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 640232488710400422ull);
     vlSelf->top__DOT__u_core__DOT__u_ifu__DOT__hold_valid = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 2213734932041262324ull);
     vlSelf->top__DOT__u_core__DOT__u_ifu__DOT__hold_inst = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 10507723926223202700ull);

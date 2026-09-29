@@ -229,6 +229,41 @@ req_valid 悬空 = 0/X → master 永在 IDLE，done 恒 0
 ⑥ 流水线（B5）+ 转发 / 冲刷 / 精确异常 / fence.i
 ⑦ 综合 + 时序分析
 ```
+# 2026-09-29 工作总结：从"脚手架能 lint"到"联仿跑通 + DiffTest 通过"
+
+## 一、整体定位
+
+上次文档停在第 ④ 步的开头：Makefile 和 lint 都好了，但仿真器还跑不起来。这一段把第 ④ 步"集成 ysyxSoC 并联仿跑通"整条走完了，并且一路做到了 DiffTest 通过——也就是说现在不只能跑，还能自动验证每一条指令和 NEMU 参考模型是否一致。整个工作可以分成四块：AM 侧新建了一套 ysyxSoC 的运行时平台、链接脚本和内存布局重新划过、仿真侧的 tb 从单体拆成了结构化的四个文件并改用 DPI 导出读 CPU 状态、以及 NEMU 侧为 SoC 的地址空间单独开了一段内存窗口并接上了 Difftest。
+
+## 二、AM 侧：新建 riscv32e-ysyxsoc 平台
+
+这一块是"让程序能在 ysyxSoC 上跑起来"的前提。新增了架构描述 `riscv32e-ysyxsoc.mk`（沿用 rv32e 的 ISA 与 ilp32e ABI，并把 libgcc 的除法、乘法、移位等软实现挂进来），以及平台描述 `platform/ysyxsoc.mk`（指定参与编译的源文件，并新增了 `image` 和 `run` 两条规则）。`image` 负责用 objcopy 从 ELF 抽出裸二进制；`run` 则直接调 `npc/soc` 的 Makefile 并把镜像路径传过去，于是 `make ARCH=riscv32e-ysyxsoc ALL=xxx run` 一条命令就能完成编译、抽镜像、跑仿真，不用再手工敲三条命令。运行时代码放在 `am/src/riscv/ysyxsoc/`：`start.S` 把 `_start` 放在最前面、设好栈指针、把 `.data` 的初值从 MROM 搬到 SRAM、把 `.bss` 清零，然后跳进 `_trm_init`；`trm.c` 提供 `putch`、`halt` 和 `_trm_init`，其中 `halt` 先打印一个表示成败的字符，再把返回码放进 a0 并执行 `ebreak`，最后用死循环兜底。
+
+## 三、链接脚本与内存布局
+
+新的链接脚本 `ysyxsoc.ld` 是这段工作里最关键的设计之一，因为它直接对应 ysyxSoC 的物理地址。只读部分——`_start`、`.text`、`.rodata`——被放在 `0x20000000` 开始的 MROM 区域，并且通过把 `*(entry)` 段排在最前来保证 `_start` 恰好落在 `0x20000000`（也就是 CPU 复位后开始取指的地址）。可写部分被显式跳到 `0x0f000000` 的 SRAM：`.data` 用 `AT(_data_lma)` 声明"运行地址在 SRAM、但初值存放在 MROM"，`.bss` 紧随其后，再由 `.bss` 末尾定义堆的起点，栈则固定在 SRAM 的末尾 `0x0f002000`。脚本末尾还加了一条 ASSERT，一旦 `.data` 加 `.bss` 超过 8KB 就在链接期报错，避免程序静默地踩到栈。这样整个地址空间就成了"MROM 只读放代码和常量、SRAM 可写放数据/堆/栈、UART 落在 `0x10000000`"这套和真实 SoC 一致的布局，而不再像单跑那样把所有东西都塞在 `0x80000000` 起步的一整块里。
+
+## 四、串口输出
+
+`putch` 现在直接往 `0x10000000` 写一个字节，也就是 ysyxSoC 内部那颗真实 uart16550 的 MMIO 地址，取代了单跑时走 DPI 回调 `uart_putchar` 的做法。这里要如实记一笔现状：SoC 里这颗 UART 的发送脚最终走到顶层端口 `externalPins_uart_tx`，而 tb 目前只把 `externalPins_uart_rx` 拉成空闲电平、并没有去采样 TX，所以仿真里是看不到字符输出的；程序"是否成功"目前靠 `halt` 写进 a0 的返回码和 tb 打印的退出码来判定。把 TX 接出来做真正的串口打印属于可以后补的一项。
+
+## 五、接入 SoC 的仿真侧改造
+
+tb 从一个什么都塞在一起的单体文件，拆成了职责分明的四个文件：`soc_tb.cpp` 只留驱动（`gpio_init`、`tick`、`reset_circuit`）和主流程，`soc_mem.cpp` 扮演 SoC 的存储器（实现 Verilator 会回调的 `mrom_read`/`flash_read`、维护 4KB 的 MROM 镜像、做取指日志并在取到 `ebreak` 时置标志），`soc_dbg.cpp` 负责读 CPU 内部信号，`soc_tb.h` 统一放声明。Makefile 的 `TB_CPP` 相应从单个文件改成这三个。
+
+读 CPU 状态这块放弃了一开始"直接在 C++ 里挖 `__DOT__` 层次"的做法，改成在 `core.v` 里 `include` 一个独立的 `core_dbg.vh`，用 DPI `export "DPI-C"` 导出五个函数（`pc`、这条指令自己的 PC、`retire`、`inst_retire`、按下标取通用寄存器）。这样既绕开了 Verilator 的死代码消除（实测 `ir_dbg`、`mmio_dbg`、`state_dbg` 这些没人接的输出确实被删掉了，而函数体读过它们就保住了），又把 C++ 侧的接口固定成函数名，以后 RTL 层次或实例名改动都不用动 tb。代价是 DPI export 在调用前必须先 `svSetScope`——我们是全项目第一个用 export 的，所以第一次撞上那个 "scope wasn't set" 的报错——解决办法是在 `new` 出模型之后调一次 `cpu_dbg_init()`，用生成代码里注册的作用域名 `ysyxSoCFull.asic.cpu.cpu.u_core` 设好 scope。
+
+`npc/soc` 这边还照着 nemu 的形式补了一套 menuconfig：`Kconfig` 里放了 `DIFFTEST` 开关，`scripts/config.mk` 复用 `npc/tools/kconfig` 的工具链而不重复拷贝，Makefile 里加上 include 并把 `CONFIG_DIFFTEST` 转换成传给 C++ 的 `ENABLE_DIFFTEST`。编译选项上补了 `-DENABLE_DIFFTEST`、`-I$(abspath ../../nemu)/include`（为了 `difftest-def.h`）和 `-LDFLAGS -ldl`，并在开启时把 `ref.so` 拷进 `build/`。
+
+## 六、NEMU 侧的内存窗口与 DiffTest
+
+NEMU 作为参考模型原本只认识 `[0x80000000, 0x88000000)` 这一块连续内存，和 SoC 的 `0x20000000`/`0x0f000000` 完全不重叠，REF 一取指就会越界。解决办法不是去改 `MBASE`/`MSIZE` 这两个共用的默认值（那会破坏 NEMU 自己跑程序和单跑的 Difftest），而是新增一个 `CONFIG_DIFFTEST_SOC` 开关，另开一段窗口：`SOC_WIN_BASE = 0x0f000000`、`SOC_WIN_SIZE = 0x11002000`，让 `in_pmem` 在这段里也返回真，并新增一块独立的 `soc_mem[]` 让 `guest_to_host` 分流。因为它是静态数组且初始化为零，天然和 DUT 里 SRAM 的复位内容一致，所以连 `MEM_RANDOM` 都不用关。另外 NEMU 必须以"Shared object"为目标构建（`CONFIG_TARGET_SHARE`），否则 `LIBS` 里会带上 `-pie` 并把 `-shared` 压掉，产出 `dlopen` 装不了的 PIE 可执行文件——这个坑当时排查了一轮。
+
+Difftest 主体 `soc_difftest.cpp` 是从单跑那套移植来的，差异只有几处：读 DUT 状态改用 `cpu_pc`/`cpu_get_gprs`，初始化时不再拷 DUT 内存快照而是直接把 `.bin` 写进 REF 的 `0x20000000`，以及去掉对指令字的依赖。初始化时 `dlopen` 加载 `ref.so`、解析五个 `difftest_*` 符号、同步内存与寄存器；之后每退休一条指令就让 REF 走一步、读回它的 PC 和寄存器再做比对。这里踩了第二个坑：触发信号必须用工延后一拍的 `inst_retire` 而不是组合信号 `retire`——因为 `retire` 那一拍 PC 和寄存器还只是"允许写"、还没真正落地，用它比对会稳定地差一条指令。
+
+## 七、当前结论
+
+现在 `make ARCH=riscv32e-ysyxsoc ALL=bit run` 可以跑通，且 Difftest 在 `bit` 测试上通过。为排除"根本没比对"的假通过，还做了反向验证：故意翻转某个寄存器的最低位，Difftest 立刻报出不一致并把测试判成失败，去掉注入后恢复通过。这意味着第 ④ 步真正落地了，而且我们有了一个逐指令验证 CPU 的手段。遗留事项里最要紧的两件是：仿真侧还没把 UART 的 TX 接出来，以及 `mmio_dbg` 这类信号在 SoC 里仍被死代码消除删掉，将来跑读设备的测试（CLINT、UART 接收）时需要用同样的 DPI 导出手段把它救回来并跳过比对。
 
 ---
 

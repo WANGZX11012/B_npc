@@ -37,12 +37,17 @@ VM_PREFIX = VysyxSoCFull
 VM_MODPREFIX = VysyxSoCFull
 # User CFLAGS (from -CFLAGS on Verilator command line)
 VM_USER_CFLAGS = \
+  -DENABLE_DIFFTEST=1 -I/home/wang/ysyx-workbench/nemu/include \
 
 # User LDLIBS (from -LDFLAGS on Verilator command line)
 VM_USER_LDLIBS = \
+  -ldl \
 
 # User .cpp files (from .cpp's on Verilator command line)
 VM_USER_CLASSES = \
+  soc_dbg \
+  soc_difftest \
+  soc_mem \
   soc_tb \
 
 # User .cpp directories (from .cpp's on Verilator command line)
@@ -58,6 +63,12 @@ include $(VERILATOR_ROOT)/include/verilated.mk
 ### Executable rules... (from --exe)
 VPATH += $(VM_USER_DIR)
 
+soc_dbg.o: soc_dbg.cpp 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
+soc_difftest.o: soc_difftest.cpp 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
+soc_mem.o: soc_mem.cpp 
+	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
 soc_tb.o: soc_tb.cpp 
 	$(OBJCACHE) $(CXX) $(CXXFLAGS) $(CPPFLAGS) $(OPT_FAST)  -c -o $@ $<
 

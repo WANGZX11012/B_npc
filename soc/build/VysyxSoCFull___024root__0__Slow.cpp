@@ -3385,6 +3385,7 @@ VL_ATTR_COLD void VysyxSoCFull___024root___ctor_var_reset(VysyxSoCFull___024root
     vlSelf->ysyxSoCFull__DOT__asic__DOT__apbxbar__DOT__sel_4 = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 8452366080609895425ull);
     vlSelf->ysyxSoCFull__DOT__asic__DOT__apbxbar__DOT__sel_5 = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 5921579036726220608ull);
     vlSelf->ysyxSoCFull__DOT__asic__DOT__apbxbar__DOT__sel_6 = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 11982112740212251292ull);
+    vlSelf->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__dbg_retire = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 4309777060589783754ull);
     vlSelf->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_core__DOT__ifu_npc_normal = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 1129547449640925973ull);
     vlSelf->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_core__DOT__ifu_inst = VL_SCOPED_RAND_RESET_I(32, __VscopeHash, 14606500177683551808ull);
     vlSelf->ysyxSoCFull__DOT__asic__DOT__cpu__DOT__cpu__DOT__u_core__DOT__ifu_req_valid = VL_SCOPED_RAND_RESET_I(1, __VscopeHash, 2706365927889106341ull);

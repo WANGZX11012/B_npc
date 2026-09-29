@@ -15,6 +15,18 @@ extern "C" {
 #endif
 
 
+    // DPI EXPORTS
+    // DPI export at ../vsrc/core_dbg.vh:14:16
+    extern int npc_dbg_gpr(int i);
+    // DPI export at ../vsrc/core_dbg.vh:12:16
+    extern int npc_dbg_inst_pc();
+    // DPI export at ../vsrc/core_dbg.vh:15:16
+    extern int npc_dbg_inst_retire();
+    // DPI export at ../vsrc/core_dbg.vh:11:16
+    extern int npc_dbg_pc();
+    // DPI export at ../vsrc/core_dbg.vh:13:16
+    extern int npc_dbg_retire();
+
     // DPI IMPORTS
     // DPI import at ../vsrc/../../ysyxSoC/perip/flash/flash.v:84:30
     extern void flash_read(int addr, int* data);

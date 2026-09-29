@@ -4,6 +4,31 @@
 
 #include "Vtop__pch.h"
 
+void Vtop___024root____Vdpiexp_top__DOT__u_core__DOT__npc_dbg_pc_TOP(Vtop__Syms* __restrict vlSymsp, IData/*31:0*/ &npc_dbg_pc__Vfuncrtn) {
+    VL_DEBUG_IF(VL_DBG_MSGF("+    Vtop___024root____Vdpiexp_top__DOT__u_core__DOT__npc_dbg_pc_TOP\n"); );
+    // Body
+    npc_dbg_pc__Vfuncrtn = vlSymsp->TOP.pc;
+}
+
+void Vtop___024root____Vdpiexp_top__DOT__u_core__DOT__npc_dbg_inst_pc_TOP(Vtop__Syms* __restrict vlSymsp, IData/*31:0*/ &npc_dbg_inst_pc__Vfuncrtn) {
+    VL_DEBUG_IF(VL_DBG_MSGF("+    Vtop___024root____Vdpiexp_top__DOT__u_core__DOT__npc_dbg_inst_pc_TOP\n"); );
+    // Body
+    npc_dbg_inst_pc__Vfuncrtn = vlSymsp->TOP.top__DOT__u_core__DOT__ifu_out_pc;
+}
+
+void Vtop___024root____Vdpiexp_top__DOT__u_core__DOT__npc_dbg_retire_TOP(Vtop__Syms* __restrict vlSymsp, IData/*31:0*/ &npc_dbg_retire__Vfuncrtn) {
+    VL_DEBUG_IF(VL_DBG_MSGF("+    Vtop___024root____Vdpiexp_top__DOT__u_core__DOT__npc_dbg_retire_TOP\n"); );
+    // Body
+    npc_dbg_retire__Vfuncrtn = vlSymsp->TOP.top__DOT__u_core__DOT__retire;
+}
+
+void Vtop___024root____Vdpiexp_top__DOT__u_core__DOT__npc_dbg_gpr_TOP(Vtop__Syms* __restrict vlSymsp, IData/*31:0*/ i, IData/*31:0*/ &npc_dbg_gpr__Vfuncrtn) {
+    VL_DEBUG_IF(VL_DBG_MSGF("+    Vtop___024root____Vdpiexp_top__DOT__u_core__DOT__npc_dbg_gpr_TOP\n"); );
+    // Body
+    npc_dbg_gpr__Vfuncrtn = vlSymsp->TOP.top__DOT__u_core__DOT__u_regfile__DOT__rf
+        [(0x0000001fU & i)];
+}
+
 #ifdef VL_DEBUG
 VL_ATTR_COLD void Vtop___024root___dump_triggers__ico(const VlUnpacked<QData/*63:0*/, 1> &triggers, const std::string &tag);
 #endif  // VL_DEBUG
@@ -837,11 +862,11 @@ void Vtop___024root___nba_sequent__TOP__0(Vtop___024root* vlSelf) {
         ((IData)(vlSelfRef.top__DOT__u_core__DOT__mst_done) 
          & (IData)(vlSelfRef.top__DOT__u_core__DOT__u_arb__DOT__sel_is_ifu));
     if (vlSelfRef.top__DOT__u_core__DOT__arb_ifu_done) {
-        vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__out_pc 
+        vlSelfRef.top__DOT__u_core__DOT__ifu_out_pc 
             = vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__pc_reg;
         vlSelfRef.ir_dbg = vlSelfRef.top__DOT__u_core__DOT__arb_ifu_rdata;
     } else {
-        vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__out_pc 
+        vlSelfRef.top__DOT__u_core__DOT__ifu_out_pc 
             = vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__hold_pc;
         vlSelfRef.ir_dbg = vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__hold_inst;
     }
@@ -1802,7 +1827,7 @@ void Vtop___024root___nba_sequent__TOP__0(Vtop___024root* vlSelf) {
     vlSelfRef.__Vfunc_top__DOT__u_core__DOT__u_wbu__DOT__wb_func__1__i_alu_result 
         = vlSelfRef.top__DOT__u_core__DOT__u_ex_mem__DOT__result_r;
     vlSelfRef.__Vfunc_top__DOT__u_core__DOT__u_wbu__DOT__wb_func__1__i_pc4 
-        = ((IData)(4U) + vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__out_pc);
+        = ((IData)(4U) + vlSelfRef.top__DOT__u_core__DOT__ifu_out_pc);
     vlSelfRef.__Vfunc_top__DOT__u_core__DOT__u_wbu__DOT__wb_func__1__i_wb_sel 
         = (((IData)(vlSelfRef.top__DOT__u_core__DOT__u_idu__DOT__is_add) 
             | ((IData)(vlSelfRef.top__DOT__u_core__DOT__u_idu__DOT__is_addi) 
@@ -1880,7 +1905,7 @@ void Vtop___024root___nba_sequent__TOP__0(Vtop___024root* vlSelf) {
                         ? vlSelfRef.top__DOT__u_core__DOT__u_CSRFile__DOT__mtvec
                         : ((5U == (IData)(vlSelfRef.top__DOT__u_core__DOT__u_idu__DOT__npc_sel))
                             ? vlSelfRef.top__DOT__u_core__DOT__u_CSRFile__DOT__mepc
-                            : ((IData)(4U) + vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__out_pc))))));
+                            : ((IData)(4U) + vlSelfRef.top__DOT__u_core__DOT__ifu_out_pc))))));
     vlSelfRef.__Vtableidx2 = (0x00000020U | (((((((~ (IData)(vlSelfRef.top__DOT__u_core__DOT__u_arb__DOT__sel_is_ifu)) 
                                                   & (IData)(vlSelfRef.top__DOT__u_core__DOT__u_idu__DOT__mem_we)) 
                                                  << 5U) 
@@ -2003,7 +2028,7 @@ void Vtop___024root___nba_sequent__TOP__0(Vtop___024root* vlSelf) {
         [vlSelfRef.__Vtableidx3];
     vlSelfRef.top__DOT__u_core__DOT__trap_pc = ((IData)(vlSelfRef.top__DOT__u_core__DOT__irq_taken)
                                                  ? vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__npc_normal
-                                                 : vlSelfRef.top__DOT__u_core__DOT__u_ifu__DOT__out_pc);
+                                                 : vlSelfRef.top__DOT__u_core__DOT__ifu_out_pc);
 }
 
 void Vtop___024root___eval_nba(Vtop___024root* vlSelf) {

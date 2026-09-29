@@ -15,6 +15,16 @@ extern "C" {
 #endif
 
 
+    // DPI EXPORTS
+    // DPI export at /home/wang/ysyx-workbench/npc/vsrc/core_dbg.vh:13:16
+    extern int npc_dbg_gpr(int i);
+    // DPI export at /home/wang/ysyx-workbench/npc/vsrc/core_dbg.vh:11:16
+    extern int npc_dbg_inst_pc();
+    // DPI export at /home/wang/ysyx-workbench/npc/vsrc/core_dbg.vh:10:16
+    extern int npc_dbg_pc();
+    // DPI export at /home/wang/ysyx-workbench/npc/vsrc/core_dbg.vh:12:16
+    extern int npc_dbg_retire();
+
     // DPI IMPORTS
     // DPI import at vsrc/dpic_mem.v:6:30
     extern void dpic_mem_read(unsigned long long addr, unsigned int* rdata);

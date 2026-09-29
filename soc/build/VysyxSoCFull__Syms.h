@@ -18,6 +18,11 @@
 #include "VysyxSoCFull___024unit.h"
 
 // DPI TYPES for DPI Export callbacks (Internal use)
+using VysyxSoCFull__Vcb_npc_dbg_gpr_t = void (*) (VysyxSoCFull__Syms* __restrict vlSymsp, IData/*31:0*/ i, IData/*31:0*/ &npc_dbg_gpr__Vfuncrtn);
+using VysyxSoCFull__Vcb_npc_dbg_inst_pc_t = void (*) (VysyxSoCFull__Syms* __restrict vlSymsp, IData/*31:0*/ &npc_dbg_inst_pc__Vfuncrtn);
+using VysyxSoCFull__Vcb_npc_dbg_inst_retire_t = void (*) (VysyxSoCFull__Syms* __restrict vlSymsp, IData/*31:0*/ &npc_dbg_inst_retire__Vfuncrtn);
+using VysyxSoCFull__Vcb_npc_dbg_pc_t = void (*) (VysyxSoCFull__Syms* __restrict vlSymsp, IData/*31:0*/ &npc_dbg_pc__Vfuncrtn);
+using VysyxSoCFull__Vcb_npc_dbg_retire_t = void (*) (VysyxSoCFull__Syms* __restrict vlSymsp, IData/*31:0*/ &npc_dbg_retire__Vfuncrtn);
 
 // SYMS CLASS (contains all model state)
 class alignas(VL_CACHE_LINE_BYTES) VysyxSoCFull__Syms final : public VerilatedSyms {
@@ -37,6 +42,7 @@ class alignas(VL_CACHE_LINE_BYTES) VysyxSoCFull__Syms final : public VerilatedSy
     VerilatedScope __Vscope_ysyxSoCFull__asic__axi4xbar_1;
     VerilatedScope __Vscope_ysyxSoCFull__asic__axi4yank;
     VerilatedScope __Vscope_ysyxSoCFull__asic__axi4yank__unnamedblk1;
+    VerilatedScope __Vscope_ysyxSoCFull__asic__cpu__cpu__u_core;
     VerilatedScope __Vscope_ysyxSoCFull__asic__lmrom;
     VerilatedScope __Vscope_ysyxSoCFull__flash;
     VerilatedScope __Vscope_ysyxSoCFull__flash__flash_cmd_i;

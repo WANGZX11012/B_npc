@@ -26,6 +26,7 @@ VM_TRACE_VCD = 0
 # Generated module classes, fast-path, compile with highest optimization
 VM_CLASSES_FAST += \
   VysyxSoCFull \
+  VysyxSoCFull__Dpi_Export__0 \
   VysyxSoCFull___024root__0 \
   VysyxSoCFull___024root__1 \
   VysyxSoCFull___024unit__0 \

@@ -152,6 +152,7 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop___024root final : public VerilatedModule
     };
     struct {
         IData/*31:0*/ top__DOT__u_core__DOT__arb_ifu_rdata;
+        IData/*31:0*/ top__DOT__u_core__DOT__ifu_out_pc;
         IData/*31:0*/ top__DOT__u_core__DOT__arb_req_addr;
         IData/*31:0*/ top__DOT__u_core__DOT__arb_req_wdata;
         IData/*31:0*/ top__DOT__u_core__DOT__idu_imm;
@@ -162,7 +163,6 @@ class alignas(VL_CACHE_LINE_BYTES) Vtop___024root final : public VerilatedModule
         IData/*31:0*/ top__DOT__u_core__DOT__rtc_rdata;
         IData/*31:0*/ top__DOT__u_core__DOT__clint_rdata;
         IData/*31:0*/ top__DOT__u_core__DOT__trap_pc;
-        IData/*31:0*/ top__DOT__u_core__DOT__u_ifu__DOT__out_pc;
         IData/*31:0*/ top__DOT__u_core__DOT__u_ifu__DOT__npc_normal;
         IData/*31:0*/ top__DOT__u_core__DOT__u_ifu__DOT__hold_inst;
         IData/*31:0*/ top__DOT__u_core__DOT__u_ifu__DOT__hold_pc;

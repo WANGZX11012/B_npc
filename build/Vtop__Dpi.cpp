@@ -14,3 +14,35 @@
 #include "Vtop__Dpi.h"
 #include "Vtop.h"
 
+#ifndef VL_DPIDECL_npc_dbg_gpr_
+#define VL_DPIDECL_npc_dbg_gpr_
+int npc_dbg_gpr(int i) {
+    // DPI export at /home/wang/ysyx-workbench/npc/vsrc/core_dbg.vh:13:16
+    return Vtop::npc_dbg_gpr(i);
+}
+#endif
+
+#ifndef VL_DPIDECL_npc_dbg_inst_pc_
+#define VL_DPIDECL_npc_dbg_inst_pc_
+int npc_dbg_inst_pc() {
+    // DPI export at /home/wang/ysyx-workbench/npc/vsrc/core_dbg.vh:11:16
+    return Vtop::npc_dbg_inst_pc();
+}
+#endif
+
+#ifndef VL_DPIDECL_npc_dbg_pc_
+#define VL_DPIDECL_npc_dbg_pc_
+int npc_dbg_pc() {
+    // DPI export at /home/wang/ysyx-workbench/npc/vsrc/core_dbg.vh:10:16
+    return Vtop::npc_dbg_pc();
+}
+#endif
+
+#ifndef VL_DPIDECL_npc_dbg_retire_
+#define VL_DPIDECL_npc_dbg_retire_
+int npc_dbg_retire() {
+    // DPI export at /home/wang/ysyx-workbench/npc/vsrc/core_dbg.vh:12:16
+    return Vtop::npc_dbg_retire();
+}
+#endif
+
