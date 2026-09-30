@@ -25,6 +25,7 @@ module IFU (
   input  [31:0]       csr_mtvec,                       // exception entry
   input  [31:0]       csr_mepc,                        // mret return addr
   input               irq_taken,                       // 中断响应: WB拍&MIE&mtip 三者成立时拉高, 强制跳 mtvec
+  input               access_fault,                    // 总线错误
 
   //提供给axi转化的信号 简单请求
   output              req_valid,
@@ -57,7 +58,7 @@ module IFU (
 
   // 中断劫持: irq_taken 时无视本条指令的意图, 强制跳 mtvec
   wire [31:0] next_pc;
-  assign next_pc = irq_taken ? csr_mtvec :  npc_normal;
+  assign next_pc = access_fault ? 32'b0 :(irq_taken ? csr_mtvec :  npc_normal); //fault跳0
 
   // ── PC register ──
   reg [31:0] pc_reg;
@@ -67,7 +68,7 @@ module IFU (
   begin
     if (rst)
       pc_reg <= `RESET_PC;
-    else if (pc_we)
+    else if (pc_we || access_fault)  // 总线故障时不等退休, 自己抢占写 PC
       pc_reg <= next_pc;
   end
 

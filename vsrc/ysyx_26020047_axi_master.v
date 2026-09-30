@@ -14,7 +14,8 @@ module  ysyx_26020047_axi_master(
 
     //完成标志
     output          done,
-    output [31:0]   resp_rdata,     //  返回的读数据          
+    output [31:0]   resp_rdata,     //  返回的读数据   
+    output          resp_err,       //  出错误       
 
 
     /**axilite接口 把master信号翻译成从设备能看得懂的东西**/
@@ -123,6 +124,14 @@ assign bready = state == B && !stall;
 
 /** 完成信号 **/
 assign done = (rready && rvalid  && rlast)|| (bvalid && bready); //读或写完成 握手完成
+
+wire rd_err = rready && rvalid && rlast && rresp[1]; 
+// 报错是在要真正传递数据的时候出现的
+// resp高 bit 为 1 就代表错误（见下表），用它一句就能同时覆盖 SLVERR 和 DECERR
+// rlast 保证一个事务一个报错 如果是多拍的传输 最后一拍才拉高
+wire wr_err = bvalid && bready && bresp[1];
+assign resp_err = rd_err || wr_err;
+// assign resp_err = done && (req_addr == 32'h10000000);
 
 
 

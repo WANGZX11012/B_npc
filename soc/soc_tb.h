@@ -17,6 +17,8 @@ bool     cpu_retire(VysyxSoCFull *top);                // 这一拍要退休一�
 bool     cpu_inst_retire(VysyxSoCFull *top);           // 干净状态标志
 void     cpu_get_gprs(VysyxSoCFull *top, uint32_t *gpr);
 void     cpu_dbg_init(void);                           // 设 DPI scope, 必须在 new 之后、调用 cpu_* 之前
+bool     cpu_access_fault(VysyxSoCFull *top);           // 是否发生过总线错误(粘住)
+uint32_t cpu_fault_addr(VysyxSoCFull *top);             // 第一次出错的地址
 
 
 

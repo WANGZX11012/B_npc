@@ -10,6 +10,9 @@ uint32_t cpu_pc(VysyxSoCFull *)             { return npc_dbg_pc();      }
 uint32_t cpu_ir_pc(VysyxSoCFull *)          { return npc_dbg_inst_pc(); }
 bool     cpu_retire(VysyxSoCFull *)         { return npc_dbg_retire();  }
 bool     cpu_inst_retire(VysyxSoCFull *)    { return npc_dbg_inst_retire();  }
+bool     cpu_access_fault(VysyxSoCFull *)   { return npc_dbg_access_fault() != 0; }
+uint32_t cpu_fault_addr(VysyxSoCFull *)     { return (uint32_t)npc_dbg_fault_addr(); }
+
 
 void     cpu_get_gprs(VysyxSoCFull *, uint32_t *g) 
 {

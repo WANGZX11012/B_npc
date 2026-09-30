@@ -71,11 +71,17 @@ int main(int argc, char *argv[])
     
     // if (i % 10000 == 0) printf("[soc_tb] cycle %ld\n", i);
     if(ebreak_triggered)  break;
-    #if ENABLE_DIFFTEST
+    if (cpu_access_fault(top)) 
+    {                 // ★ 总线错误: 立刻停, 别再空跑两千万拍
+      printf("[soc_tb] ★ ACCESS FAULT @ 0x%08x (pc=0x%08x)\n",
+             cpu_fault_addr(top), cpu_pc(top));
+      break;
+    }
+
+    #if ENABLE_DIFFTEST  // DIFFTEST相关
       if (cpu_inst_retire(top))                      // 用"写完了"的那个, 不是"要写了"的
       {
         cpu_get_gprs(top, cpu_gprs);
-        cpu_gprs[5] = 1;
         if (!difftest_step(cpu_pc(top), cpu_gprs))
         {
           printf("[soc_tb] DIFFTEST 不一致, 停止\n");
@@ -92,6 +98,7 @@ int main(int argc, char *argv[])
 
   cpu_get_gprs(top, cpu_gprs);
   uint32_t cpu_a0 = cpu_gprs[10];
+   printf("[soc_tb] pc = 0x%08x\n", cpu_pc(top));
   printf("[soc_tb] 退出码 = %u\n", cpu_a0);
   delete top;                       //  再释放
   
