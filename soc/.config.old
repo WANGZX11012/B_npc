@@ -1,0 +1,10 @@
+#
+# Automatically generated file; DO NOT EDIT.
+# ysyxSoC simulation configuration menu
+#
+
+#
+# Testing and Debuging
+#
+CONFIG_DIFFTEST=y
+# end of Testing and Debuging

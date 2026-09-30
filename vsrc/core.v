@@ -110,6 +110,7 @@ module core (
   wire [31:0] mst_araddr, mst_awaddr, mst_wdata, mst_rdata;
   wire        mst_arvalid, mst_arready, mst_rvalid, mst_rready;
   wire [1:0]  mst_rresp;
+  wire        mst_resp_err; //出错检测  
   wire        mst_awvalid, mst_awready, mst_wvalid, mst_wready;
   wire [3:0]  mst_wstrb;
   wire [1:0]  mst_bresp;
@@ -293,6 +294,7 @@ module core (
     .branch_taken(exu_branch_taken),
     .csr_mtvec(csr_mtvec), .csr_mepc(csr_mepc),
     .irq_taken(irq_taken),                 // 中断行为 劫持取指
+    .access_fault(access_fault),          // 总线出错 强制写pc
     .req_valid(ifu_req_valid),
     .req_addr(ifu_req_addr),
     .handshake_done(arb_ifu_done),
@@ -421,7 +423,9 @@ module core (
     .req_addr(arb_req_addr),   .req_wdata(arb_req_wdata),
     .req_wstrb(arb_req_wstrb), .stall(lfsr_stall),
     // 完成/读数据 → arbiter
-    .done(mst_done), .resp_rdata(mst_resp_rdata),
+    .done(mst_done), .resp_rdata(mst_resp_rdata), 
+    // 错误检测
+    .resp_err(mst_resp_err),
     // AR
     .arid(mst_arid), .araddr(mst_araddr), .arlen(mst_arlen), .arsize(mst_arsize),
     .arburst(mst_arburst), .arvalid(mst_arvalid), .arready(mst_arready),
@@ -668,6 +672,50 @@ module core (
       inst_retire <= retire;
     end
   end
+  // ── Access Fault: 命中即粘住, 直到复位 ──
+  //   讲义建议: 未实现 CTE 前不做完整 trap, 先把错误"暴露"出来;
+  //   否则 CPU 拿着错误数据继续跑, 故障点离病因几十万拍, 极难查。
+  `ifdef YSYXSOC
+  // ── 地址白名单: 落在这几段之外 = 越界 ──
+  //   为什么不能只靠 resp:
+  //     实测这颗 SoC 的 AXI Xbar 对"没有任何从设备认领"的地址返回 OKAY, 静默吞掉
+  //     (见 ysyxSoC/build/ysyxSoCFull.v:1207 —— 两个分支的默认值都是 2'h0);
+  //     只有落在某个从设备辖区内、但超出它容量的, 才拿得到 DECERR(如 SRAM 越界)。
+  //   所以"越界"必须由 NPC 自己判一份白名单兜底, 和 resp 检测互补。
+  function addr_legal;
+    input [31:0] a;
+    begin
+      addr_legal = (a[31:12] == 20'h20000)    // MROM  0x2000_0000 ~ 0x2000_0fff (4KB)
+                || (a[31:13] == 19'h07800)    // SRAM  0x0f00_0000 ~ 0x0f00_1fff (8KB)
+                || (a[31:12] == 20'h10000)    // UART  0x1000_0000
+                || (a[31:16] == 16'h0200);    // CLINT 0x0200_0000
+    end
+  endfunction
+
+  // 地址通道有效时就判: 读或写, 落在白名单之外即越界
+  wire addr_bad = (mst_arvalid && !addr_legal(mst_araddr))
+               || (mst_awvalid && !addr_legal(mst_awaddr));
+`else
+  wire addr_bad = 1'b0;                       // 单跑模式地址图不同, 不启用
+`endif
+
+  reg         access_fault_r;    // 出错标志: 一旦置起就不再清, 直到复位
+  reg  [31:0] fault_addr_r;      // 第一次出错的地址 —— 排查时最关键的信息
+
+  always @(posedge clk) 
+  begin
+    if (rst) 
+    begin
+      access_fault_r <= 1'b0;
+      fault_addr_r   <= 32'b0;
+    end else if (mst_resp_err || addr_bad) 
+    begin
+      access_fault_r <= 1'b1;
+      if (!access_fault_r) fault_addr_r <= arb_req_addr;   // 只抓第一次, 不被后续覆盖
+    end
+  end
+  wire access_fault = access_fault_r;
+
 
 `include "core_dbg.vh"
 
