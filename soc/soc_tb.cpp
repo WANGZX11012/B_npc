@@ -98,11 +98,33 @@ int main(int argc, char *argv[])
 
   cpu_get_gprs(top, cpu_gprs);
   uint32_t cpu_a0 = cpu_gprs[10];
-   printf("[soc_tb] pc = 0x%08x\n", cpu_pc(top));
+  printf("[soc_tb] pc = 0x%08x\n", cpu_pc(top));
   printf("[soc_tb] 退出码 = %u\n", cpu_a0);
-  delete top;                       //  再释放
-  
-  return difftest_ok() ? (int)cpu_a0 : 1;                  // 关掉时恒 true
+
+  int rc = 0;
+  if (cpu_access_fault(top)) 
+  {
+    printf("[soc_tb] ***FAIL*** 总线越界 / Access Fault\n");
+    rc = 1;
+  } 
+  else if (!ebreak_triggered) 
+  {
+    printf("[soc_tb] ***FAIL*** 程序没有跑到 halt (CPU 中途停住/取指不到)\n");
+    rc = 1;
+  } 
+  else if (!difftest_ok()) 
+  {
+    printf("[soc_tb] ***FAIL*** difftest 不一致\n");
+    rc = 1;
+  } 
+  else if (cpu_a0 != 0) 
+  {
+    printf("[soc_tb] ***FAIL*** 程序自己 halt 了非零退出码 %u\n", cpu_a0);
+    rc = 1;
+  }
+  delete top;
+  return rc;
+
 
 }
 

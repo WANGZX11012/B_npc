@@ -4,3 +4,4 @@
  * ysyxSoC simulation configuration menu
  *
  */
+#define CONFIG_DIFFTEST 1
