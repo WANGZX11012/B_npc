@@ -18,7 +18,7 @@ extern "C" void flash_read(int addr, int *data) { (void)addr; *data = 0; assert(
 extern "C" void mrom_read (int addr, int *data) 
 { 
   mrom_count++;  
-  printf("[ifetch] 0x%08x\n", (uint32_t)addr);  //打印当前指令   
+  // printf("[ifetch] 0x%08x\n", (uint32_t)addr);  //打印当前指令   
   
   if (mrom_count == 1) printf("Soc visit mrom (first)\n");
   uint32_t off = uint32_t(addr) - MROM_BASE;
