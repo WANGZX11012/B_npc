@@ -14,6 +14,7 @@ module arbiter (
   input  wire [31:0]  lsu_req_addr,
   input  wire [31:0]  lsu_req_wdata,
   input  wire [3:0]   lsu_req_wstrb,
+  input  wire [1:0]   lsu_req_rsize,
   output wire         lsu_done,
   output wire [31:0]  lsu_resp_rdata,
 
@@ -23,6 +24,7 @@ module arbiter (
   output wire [31:0]  m_req_addr,
   output wire [31:0]  m_req_wdata,
   output wire [3:0]   m_req_wstrb,
+  output wire [1:0]   m_req_rsize, 
   input  wire         m_done,
   input  wire [31:0]  m_resp_rdata
 );
@@ -57,6 +59,7 @@ module arbiter (
   assign m_req_addr  = sel_is_ifu ? ifu_req_addr : lsu_req_addr;
   assign m_req_wdata = sel_is_ifu ? 32'b0   : lsu_req_wdata;
   assign m_req_wstrb = sel_is_ifu ? 4'b0    : lsu_req_wstrb;
+  assign m_req_rsize  = sel_is_ifu ? 2'b10   : lsu_req_rsize;
 
   // ── 响应路由：done/rdata 只给归属方 ──
   assign ifu_done       = m_done &&  sel_is_ifu;

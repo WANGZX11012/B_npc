@@ -5,5 +5,6 @@
  *
  */
 #define CONFIG_DPI_MEM 1
+#define CONFIG_WAVE 1
 #define CONFIG_DATA_MEM_DELAY 1
 #define CONFIG_ISA "riscv32"

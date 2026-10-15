@@ -245,7 +245,9 @@ req_valid 悬空 = 0/X → master 永在 IDLE，done 恒 0
 
 ## 四、串口输出
 
-`putch` 现在直接往 `0x10000000` 写一个字节，也就是 ysyxSoC 内部那颗真实 uart16550 的 MMIO 地址，取代了单跑时走 DPI 回调 `uart_putchar` 的做法。这里要如实记一笔现状：SoC 里这颗 UART 的发送脚最终走到顶层端口 `externalPins_uart_tx`，而 tb 目前只把 `externalPins_uart_rx` 拉成空闲电平、并没有去采样 TX，所以仿真里是看不到字符输出的；程序"是否成功"目前靠 `halt` 写进 a0 的返回码和 tb 打印的退出码来判定。把 TX 接出来做真正的串口打印属于可以后补的一项。
+`putch` 现在直接往 `0x10000000` 写一个字节，也就是 ysyxSoC 内部那颗真实 uart16550 的 MMIO 地址，取代了单跑时走 DPI 回调 `uart_putchar` 的做法。字符最终能打到仿真终端：uart16550 的发送 FIFO 模块 `uart_tfifo.v` 里有两处 `$write("%c", data_in)`（第 214/224 行），它把发送的字节直接打到终端——所以**并不需要 tb 去采样 `externalPins_uart_tx`**，程序打印的字符（用 char-test 写 'A'/'c' 实测过）仿真里就能看到。
+
+这里对应讲义"不打印换行符也能打印出字符"的要求，坑在**输出缓冲**：`stdout` 默认是行缓冲的，打的内容先攒在缓冲区里，要等换行符 `\n`、缓冲区满或程序退出才真正写到终端；而 CPU 打印的字符经 `$write` 落到 stdout 时永远只有一个字节、不带换行，于是全部憋在缓冲区里，表现为"字符凭空消失，程序退出后蹦出来一坨"。解决办法是关闭缓冲，二选一：给 verilator 加 `--autoflush`（已加在 `npc/soc/Makefile` 的 verilator 命令行里），或在 tb 的 `main` 开头调 `setvbuf(stdout, NULL, _IONBF, 0)`。以后若发现"程序明明执行了 putch 但终端没有输出"，先查这一条，再怀疑 RTL。
 
 ## 五、接入 SoC 的仿真侧改造
 
@@ -263,7 +265,7 @@ Difftest 主体 `soc_difftest.cpp` 是从单跑那套移植来的，差异只有
 
 ## 七、当前结论
 
-现在 `make ARCH=riscv32e-ysyxsoc ALL=bit run` 可以跑通，且 Difftest 在 `bit` 测试上通过。为排除"根本没比对"的假通过，还做了反向验证：故意翻转某个寄存器的最低位，Difftest 立刻报出不一致并把测试判成失败，去掉注入后恢复通过。这意味着第 ④ 步真正落地了，而且我们有了一个逐指令验证 CPU 的手段。遗留事项里最要紧的两件是：仿真侧还没把 UART 的 TX 接出来，以及 `mmio_dbg` 这类信号在 SoC 里仍被死代码消除删掉，将来跑读设备的测试（CLINT、UART 接收）时需要用同样的 DPI 导出手段把它救回来并跳过比对。
+现在 `make ARCH=riscv32e-ysyxsoc ALL=bit run` 可以跑通，且 Difftest 在 `bit` 测试上通过。为排除"根本没比对"的假通过，还做了反向验证：故意翻转某个寄存器的最低位，Difftest 立刻报出不一致并把测试判成失败，去掉注入后恢复通过。这意味着第 ④ 步真正落地了，而且我们有了一个逐指令验证 CPU 的手段。（此前把"接出 UART 的 TX"列为遗留事项，后来查明 `uart_tfifo.v` 里的 `$write` 已把字符直接打到终端，此项撤销。）遗留事项更新为：`mmio_dbg` 这类信号在 SoC 里仍被死代码消除删掉，将来跑读设备的测试（RTC、UART 接收）时需要用同样的 DPI 导出手段把它救回来并跳过比对；以及 MROM 只有 4KB，大程序（如 hello-str、rtc-test）装不下，需要 bootloader 把程序搬进大内存。
 
 ---
 

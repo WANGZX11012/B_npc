@@ -2,6 +2,7 @@
 // ── 复位向量: 平台相关 ──
 //   单跑: 程序在主存, 链接在 0x8000_0000
 //   SoC : 从 MROM 启动, MROM 在 0x2000_0000
+//   现在升级flash 放在0x3000_0000
 `ifdef YSYXSOC
   `define RESET_PC 32'h2000_0000
 `else

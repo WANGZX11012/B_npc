@@ -90,6 +90,7 @@ module core (
   wire [31:0] lsu_req_addr;     // LSU → arbiter (访存地址)
   wire [31:0] lsu_req_wdata;    // LSU → arbiter (store 数据)
   wire [3:0]  lsu_req_wmask;    // LSU → arbiter (字节写使能)
+  wire [1:0]  lsu_req_rsize;    // 一样的 读宽度
   wire        arb_lsu_done;     // arbiter → LSU (握手完成)
   wire [31:0] arb_lsu_rdata;    // arbiter → LSU (返回数据)
   wire [31:0] lsu_rdata;        // LSU → WBU (load 数据, 已符号/零扩展)
@@ -103,6 +104,7 @@ module core (
   wire [31:0] arb_req_addr;     // arbiter → master
   wire [31:0] arb_req_wdata;    // arbiter → master
   wire [3:0]  arb_req_wstrb;    // arbiter → master
+  wire [1:0]  arb_req_rsize;    // arb -> mst
   wire        mst_done;         // master → arbiter (传输完成)
   wire [31:0] mst_resp_rdata;   // master → arbiter (读数据)
 
@@ -360,6 +362,7 @@ module core (
     .req_addr(lsu_req_addr),
     .req_wdata(lsu_req_wdata),
     .req_wmask(lsu_req_wmask),
+    .req_rsize(lsu_req_rsize),
 
     .in_valid(mem_req),
     .in_ready(lsu_in_ready),
@@ -408,10 +411,12 @@ module core (
     .lsu_req_valid(lsu_req_valid), .lsu_req_we(idu_mem_we),
     .lsu_req_addr(lsu_req_addr), .lsu_req_wdata(lsu_req_wdata),
     .lsu_req_wstrb(lsu_req_wmask),
+    .lsu_req_rsize(lsu_req_rsize),
     .lsu_done(arb_lsu_done), .lsu_resp_rdata(arb_lsu_rdata),
     .m_req_valid(arb_req_valid), .m_req_we(arb_req_we),
     .m_req_addr(arb_req_addr), .m_req_wdata(arb_req_wdata),
     .m_req_wstrb(arb_req_wstrb),
+    .m_req_rsize(arb_req_rsize),
     .m_done(mst_done), .m_resp_rdata(mst_resp_rdata)
   );
 
@@ -421,7 +426,8 @@ module core (
     // 简单请求侧 ← arbiter
     .req_valid(arb_req_valid), .req_we(arb_req_we),
     .req_addr(arb_req_addr),   .req_wdata(arb_req_wdata),
-    .req_wstrb(arb_req_wstrb), .stall(lfsr_stall),
+    .req_wstrb(arb_req_wstrb),  .req_rsize(arb_req_rsize),
+    .stall(lfsr_stall),
     // 完成/读数据 → arbiter
     .done(mst_done), .resp_rdata(mst_resp_rdata), 
     // 错误检测
@@ -688,7 +694,9 @@ module core (
       addr_legal = (a[31:12] == 20'h20000)    // MROM  0x2000_0000 ~ 0x2000_0fff (4KB)
                 || (a[31:13] == 19'h07800)    // SRAM  0x0f00_0000 ~ 0x0f00_1fff (8KB)
                 || (a[31:12] == 20'h10000)    // UART  0x1000_0000
-                || (a[31:16] == 16'h0200);    // CLINT 0x0200_0000
+                || (a[31:12] == 20'h10001)    // ★ SPI 0x1000_1000 ~ 0x1000_1fff
+                || (a[31:16] == 16'h0200)     // CLINT 0x0200_0000
+                || (a[31:28] == 4'h3);        // ★ XIP flash  0x30000000 ~ 0x3fffffff
     end
   endfunction
 
