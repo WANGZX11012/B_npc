@@ -26,6 +26,7 @@ module LSU (
 
   output[31:0]        req_wdata,
   output[3:0]         req_wmask,
+  output[1:0]         req_rsize,                      // 新增: 访存宽度, 读方向 arsize 的源头
 
   // 输出: to ctrl / WBU
   output wire         in_ready,                       // 我能收新访存单(!busy)
@@ -43,6 +44,7 @@ module LSU (
   reg        res_rdy;              // 总线已返回, 结果等交班
   reg [31:0] addr_r;               // 请求包: 访存地址
   reg [3:0]  wmask_r;              // 请求包: 写掩码
+  reg [1:0]  rsize_r;              // 请求包: 访存宽度
   reg [31:0] wdata_r;              // 请求包: 写数据(已摆位)
   reg [31:0] rdata_r;              // 结果: 读数据(已符号/零扩展)
   assign in_ready = !busy;         // 手里空着就能收
@@ -61,12 +63,28 @@ module LSU (
       `MEM_HALF: wmask_gen = off[1] ? 4'b1100 : 4'b0011;  // 半字按 addr[1] 对齐
       default:   wmask_gen = 4'b1111;                     // MEM_WORD
     endcase
+  end    
+  // ── 访存宽度 → AXI size: 每拍 2^size 字节 ──
+  reg [1:0] rsize_gen;
+  always @(*) 
+  begin
+    case (mem_width)
+      `MEM_BYTE: rsize_gen = 2'b00;   // 1 字节
+      `MEM_HALF: rsize_gen = 2'b01;   // 2 字节
+      default:   rsize_gen = 2'b10;   // 4 字节
+    endcase
   end
   assign req_wmask = busy ? wmask_r : wmask_gen;   // 接单拍 bypass, 之后用锁存
+  assign req_rsize = busy ? rsize_r : rsize_gen;   // 接单拍 bypass, 之后用锁存
+
   // ── store 数据摆位（复制到各字节通道，由 wmask 决定实际写入）──
   wire [31:0] wdata_gen = (mem_width == `MEM_BYTE) ? {4{wdata_in[7:0]}} :
                           (mem_width == `MEM_HALF) ? {2{wdata_in[15:0]}} :
                           wdata_in;
+
+
+
+
   assign req_wdata = busy ? wdata_r : wdata_gen;
 
   /*  读逻辑  */
@@ -96,6 +114,7 @@ module LSU (
       res_rdy <= 1'b0;
       addr_r  <= 32'b0;
       wmask_r <= 4'b0;
+      rsize_r <= 2'b0;
       wdata_r <= 32'b0;
       rdata_r <= 32'b0;
     end
@@ -104,6 +123,7 @@ module LSU (
       busy    <= 1'b1;             // 接单: 一条访存指令进段
       addr_r  <= addr_in;
       wmask_r <= wmask_gen;
+      rsize_r <= rsize_gen;
       wdata_r <= wdata_gen;
     end
     else if (busy && handshake_done)
@@ -117,5 +137,10 @@ module LSU (
       res_rdy <= 1'b0;
     end
   end  
+
+
+
+
+
 
 endmodule

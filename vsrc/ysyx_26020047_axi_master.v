@@ -10,6 +10,7 @@ module  ysyx_26020047_axi_master(
     input  [31:0]   req_addr,
     input  [31:0]   req_wdata,
     input  [3:0]    req_wstrb,
+    input  [1:0]    req_rsize,
     input           stall,          // LFSR 随机停顿（无 LFSR 时接 0）
 
     //完成标志
@@ -100,7 +101,7 @@ end
 assign arvalid = (state == AR);   // 地址通道有效(AR 状态期间拉高)
 assign arid    = 4'd0;
 assign arlen   = 8'd0;      // 1 拍
-assign arsize  = 3'd2;      // 4 字节
+assign arsize  = {1'b0, req_rsize};      // 扩展为3位
 assign arburst = 2'b01;     // INCR
 assign araddr = req_addr;   //axi暂时设置读写地址是一个
 //R
@@ -110,7 +111,17 @@ assign resp_rdata = rdata;
 assign awvalid = (state == AW); //根据axi协议 valid信号一旦拉高就不能降低
 assign awid    = 4'd0;
 assign awlen   = 8'd0;      // 1 拍
-assign awsize  = 3'd2;      // 4 字节
+// ★ awsize 按真实访存宽度, 由 wstrb 推导:
+reg  [2:0] awsize_gen;
+always @(*) begin
+    case (req_wstrb)
+        4'b0001, 4'b0010, 4'b0100, 4'b1000: awsize_gen = 3'd0;  // 1 字节
+        4'b0011, 4'b1100:                   awsize_gen = 3'd1;  // 2 字节
+        default:                            awsize_gen = 3'd2;  // 4 字节
+    endcase
+end
+assign awsize = awsize_gen;
+
 assign awburst = 2'b01;     // INCR
 assign awaddr = req_addr;
 //W

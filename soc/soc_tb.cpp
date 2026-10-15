@@ -59,7 +59,9 @@ int main(int argc, char *argv[])
   {
     if (argv[i][0] != '-' && argv[i][0] != '+') { img_path = argv[i]; break; }
   }
-  load_mrom(img_path);
+  load_mrom("mrom.img");   
+  load_flash(img_path);
+  
   VysyxSoCFull *top = new VysyxSoCFull;
   init_all(top, img_path);
 
@@ -70,7 +72,16 @@ int main(int argc, char *argv[])
     tick(top);
     
     // if (i % 10000 == 0) printf("[soc_tb] cycle %ld\n", i);
-    if(ebreak_triggered)  break;
+    if(ebreak_triggered) 
+    {
+      /* UART 按波特率逐位发送, 比 CPU 慢几个数量级;
+         立刻结束仿真会把 TX FIFO 里没发完的字符丢掉, 先空转让它发完 */
+      for (int j = 0; j < 500000; j++) tick(top);
+      break;
+    }
+
+
+    
     if (cpu_access_fault(top)) 
     {                 // ★ 总线错误: 立刻停, 别再空跑两千万拍
       printf("[soc_tb] ★ ACCESS FAULT @ 0x%08x (pc=0x%08x)\n",

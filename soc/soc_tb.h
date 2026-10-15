@@ -6,6 +6,8 @@
 
 /* ── 扮演 SoC 的存储器 (实现在 soc_mem.cpp) ── */
 void     load_mrom(const char *path);    // 把 .bin 灌进 MROM 镜像
+void     load_flash(const char *path);
+
 extern volatile int mrom_count;          // MROM 被访问次数
 extern int          ebreak_triggered;    // 取到 ebreak 就置 1
 extern uint32_t     ebreak_addr;         // ebreak 所在的取指地址

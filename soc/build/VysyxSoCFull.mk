@@ -37,7 +37,7 @@ VM_PREFIX = VysyxSoCFull
 VM_MODPREFIX = VysyxSoCFull
 # User CFLAGS (from -CFLAGS on Verilator command line)
 VM_USER_CFLAGS = \
-  -DENABLE_DIFFTEST=1 -I/home/wang/ysyx-workbench/nemu/include \
+  -DENABLE_DIFFTEST=0 -I/home/wang/ysyx-workbench/nemu/include \
 
 # User LDLIBS (from -LDFLAGS on Verilator command line)
 VM_USER_LDLIBS = \

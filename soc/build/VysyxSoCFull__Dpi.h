@@ -32,7 +32,7 @@ extern "C" {
     extern int npc_dbg_retire();
 
     // DPI IMPORTS
-    // DPI import at ../vsrc/../../ysyxSoC/perip/flash/flash.v:84:30
+    // DPI import at ../vsrc/../../ysyxSoC/perip/flash/flash.v:94:30
     extern void flash_read(int addr, int* data);
     // DPI import at build/ysyxSoCFull.v:5402:30
     extern void mrom_read(int raddr, int* rdata);
