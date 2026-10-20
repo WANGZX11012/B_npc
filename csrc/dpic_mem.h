@@ -34,6 +34,10 @@ void dpic_mem_read(unsigned long long addr, unsigned int *rdata);
 // 写 4 字节回 DUT pmem (被 vsrc/dpic_mem.v 经 DPI-C 调用, 按 wmask 合并字节)
 void dpic_mem_write(unsigned long long addr, unsigned int wdata, unsigned char wmask);
 
+// 无镜像时的兜底: 灌入 NEMU 风格的默认程序 (auipc/sb/lbu/ebreak)
+void dpi_load_default(void);
+
+
 #ifdef __cplusplus
 }
 #endif

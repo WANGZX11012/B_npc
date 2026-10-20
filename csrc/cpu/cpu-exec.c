@@ -62,6 +62,11 @@ void cpu_exec(int64_t n)
         printf("npc: HIT BAD TRAP (a0 = %u != 0, test failed) at pc = 0x%08x, total_inst = %lu\n",
                a0, npc_pc(), g_nr_inst);
     }
+
+    for (int i = 0; i < 100; i++) npc_cycle(); //留给最后的display 打印性能计数器
+  
+
+    
   } 
   else 
   {

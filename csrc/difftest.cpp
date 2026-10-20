@@ -70,10 +70,17 @@ static const uint32_t MEM_BASE = 0x80000000u;
 // ============================================================================
 static void load_image_bin(const char *img_path)
 {
-  if (img_path == nullptr || img_path[0] == '\0') return;
+  // ① 完全没给镜像 → 灌内置默认程序
+  if (img_path == nullptr || img_path[0] == '\0')
+  {
+    dpi_load_default();          // ★ 挪到这一支!
+    return;
+  }
 
+  // ② 给了路径但打不开 → 这是错误, 别静默兜底(否则打错路径会莫名跑默认程序)
   FILE *fp = fopen(img_path, "rb");
-  if (fp == nullptr) {
+  if (fp == nullptr)
+  {
     std::fprintf(stderr, "difftest: cannot open image %s\n", img_path);
     abort();
   }

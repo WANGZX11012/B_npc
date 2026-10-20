@@ -8,10 +8,11 @@ import "DPI-C" function void dpic_mem_write(input  longint unsigned addr, input 
 
 module dpic_mem #(
 `ifdef DATA_MEM_DELAY
-  parameter DELAY = `DATA_MEM_DELAY                     // from menuconfig
+  parameter DELAY = `DATA_MEM_DELAY,   // 设备服务时间 k 的组成部分
 `else
-  parameter DELAY = 1                                   // default: SRAM speed
+  parameter DELAY = 1,
 `endif
+  parameter R     = 1                  // ★ 频率比 r: 设备 1 拍 → CPU 视角 R 拍
 )(
   // Clock
   input  wire         clk,
@@ -91,7 +92,7 @@ module dpic_mem #(
       // 地址零扩展为 64 位(DPIC 协议要求 longint unsigned), 高位补 0 不丢信息
       dpic_mem_read({32'b0, araddr}, rdata);
       rd_delay <= 1'b1;
-      cnt <= DELAY;
+      cnt <= ((DELAY + 1) * R) - 1;    // ★ 读: 让总时延 = (DELAY+1) × R
     end
     else if(rd_delay)
     begin
@@ -121,7 +122,7 @@ module dpic_mem #(
       dpic_mem_write({32'b0, aw_addr_latch}, wdata, {4'b0, w_mask_latch});
       aw_recv <= 1'b0;
       wr_delay <= 1'b1;
-      cnt <= DELAY;
+      cnt <= ((DELAY + 2) * R) - 2;    // ★ 写: 让总时延 = (DELAY+2) × R
     end
     else if(wr_delay)
     begin

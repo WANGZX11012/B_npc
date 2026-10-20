@@ -66,6 +66,31 @@ bool dpi_load_image(const char *path)
   return true;
 }
 
+// ── 内置默认程序 (与 NEMU 一致, 无镜像时使用) ──────────────────────────
+//   对应 nemu/src/isa/riscv32/init.c 的 img[]:
+//     auipc t0,0 / sb zero,16(t0) / lbu a0,16(t0) / ebreak / 0xdeadbeef
+static const uint32_t default_pc_inst[] = 
+{
+  0x00000297,  // auipc t0,0
+  0x00028823,  // sb  zero,16(t0)
+  0x0102c503,  // lbu a0,16(t0)
+  0x00100073,  // ebreak (used as nemu_trap)
+  0xdeadbeef,  // some data
+};
+
+// 无镜像时的兜底: 灌入默认程序, 让 make run 裸跑也能跑出 GOOD TRAP
+void dpi_load_default(void)
+{
+  size_t n = sizeof(default_pc_inst) / sizeof(default_pc_inst[0]);
+  if (n > DPI_PMEM_MAX_WORDS) n = DPI_PMEM_MAX_WORDS;
+  for (size_t i = 0; i < n; i++) pmem_words[i] = default_pc_inst[i];
+  pmem_words_size = n;      // ★ 必须设, 否则 dpic_mem_read 一律返回 0
+  printf("[dpic_mem] no image given, loaded built-in default program (%zu words)\n", n);
+}
+
+
+
+
 // raw .bin: 线性布局, 字节 0 落在 MEM_BASE (0x80000000)。
 // 逐字节填入 pmem_words[] —— 与 NEMU ref.c 的
 //   memcpy(guest_to_host(MEM_BASE), buf, rd)

@@ -73,15 +73,24 @@ module core (
 
 
 
-  // ═══════════════ IFU ↔ arbiter ═══════════════
+  // ═══════════════ IFU ↔ icache ═══════════════
   wire [31:0] ifu_pc4;          // IFU → WBU (jal/jalr 写 rd = pc+4)
   wire [31:0] ifu_npc_normal;   // IFU → 第 4 步作中断 mepc (未被中断劫持的 next pc)
   wire [31:0] ifu_inst;         // IFU → IR 
   wire        ifu_req_valid;    // IFU → arbiter (取指请求)
   wire [31:0] ifu_req_addr;     // IFU → arbiter (取指地址)
+
+  // ═══════════════ icache ═══════════════
+  wire        ic_done;
+  wire [31:0] ic_rdata;
+  wire        ic_mem_req_valid;
+  wire [31:0] ic_mem_req_addr;  
+
+  // ═══════════════ icache ↔ arbiter ═══════════════
   wire        arb_ifu_done;     // arbiter → IFU (握手完成)
   wire [31:0] arb_ifu_rdata;    // arbiter → IFU (返回指令)
-    // ═══════════════ IFU 握手输出 ═══════════════
+ 
+  // ═══════════════ IFU 握手输出 ═══════════════
   wire        ifu_out_valid;    // IFU → 手里攥着一条取回的指令
   wire [31:0] ifu_out_pc;       // IFU → 这条指令自己的 PC
 
@@ -165,6 +174,18 @@ module core (
   wire        idu_csr_wen;      // → CSRFile
   wire        idu_csr_s_w;      // → CSRFile (置位/原值写)
 
+  // ── 指令分类: 用 opcode[6:0] 做互斥且完备的划分 (RV32I + Zicsr) ──
+  wire [6:0] op = IR[6:0];
+  wire is_alu    = (op==7'h13) || (op==7'h33);
+  wire is_lui    = (op==7'h37) || (op==7'h17);
+  wire is_load   = (op==7'h03);
+  wire is_store  = (op==7'h23);
+  wire is_branch = (op==7'h63);
+  wire is_jump   = (op==7'h6f) || (op==7'h67);
+  wire is_csr    = (op==7'h73) && (IR[14:12] != 3'b000);   // CSSR 系列
+  wire is_sys    = (op==7'h73) && (IR[14:12] == 3'b000);   // ecall/ebreak/mret
+
+
   // ═══════════════ RegisterFile / EXU / WBU ═══════════════
   wire [31:0] rf_rdata1;        // RegisterFile → EXU / CSRFile.csr_wdata
   wire [31:0] rf_rdata2;        // RegisterFile → LSU.wdata_in
@@ -240,6 +261,15 @@ module core (
   // 过渡期语义信号: 供值暂时还是状态比较, B3 换成段间握手, 使用点不动  
   wire        ex_stage_fire    = exm_stage_fire;  // EX 段交班拍(由 EX_MEM 自持)
 
+
+  // ═══════════════ 性能计数器 ═══════════════
+  wire [31:0]  perf_count_ifu_t;  // 次数
+  wire [31:0]  perf_count_ifu_c;  // 周期
+  wire [31:0]  perf_count_lsu_t;  // 次数
+  wire [31:0]  perf_count_lsu_c;  // 周期
+
+
+
   // ── 退休判据(影子已验证与 ctrl_pc_we 逐拍一致后才接管) ──
   //   is_mem  : 本条是 load / store
   //   exm_done: EX/MEM 接力棒的 valid —— EX 段已算完(exm_result 的 valid 位)
@@ -299,13 +329,24 @@ module core (
     .access_fault(access_fault),          // 总线出错 强制写pc
     .req_valid(ifu_req_valid),
     .req_addr(ifu_req_addr),
-    .handshake_done(arb_ifu_done),
-    .resp_rdata(arb_ifu_rdata),
+    .handshake_done(ic_done),
+    .resp_rdata(ic_rdata),
     .out_ready(wb_stage_ready),       // 过渡期: WB 拍下游把指令取走(hold 松手条件)
     .out_valid(ifu_out_valid), .out_pc(ifu_out_pc),
     .pc(pc), .pc4(ifu_pc4), .inst(ifu_inst),
     .npc_normal(ifu_npc_normal)       // 未被中断劫持的 next-pc, 中断时作 mepc
   );
+
+  icache 
+  u_icache (
+    .clk(clk),  .rst(rst), .halt(halt),
+    .ifu_req_addr(ifu_req_addr), .ifu_req_valid(ifu_req_valid),
+    .ifu_rdata(ic_rdata), .ifu_done(ic_done),
+    .mem_req_valid(ic_mem_req_valid), .mem_req_addr(ic_mem_req_addr),
+    .mem_rdata(arb_ifu_rdata), .mem_done(arb_ifu_done)
+  );
+
+
  // ── IDU ──
   IDU u_idu (
     .inst(IR),
@@ -406,7 +447,7 @@ module core (
   // ── 仲裁器：IFU/LSU 两个 master 合并成一路（IFU 固定优先）──
   arbiter u_arb (
     .clk(clk), .rst(rst),
-    .ifu_req_valid(ifu_req_valid), .ifu_req_addr(ifu_req_addr),
+    .ifu_req_valid(ic_mem_req_valid), .ifu_req_addr(ic_mem_req_addr),
     .ifu_done(arb_ifu_done), .ifu_resp_rdata(arb_ifu_rdata),
     .lsu_req_valid(lsu_req_valid), .lsu_req_we(idu_mem_we),
     .lsu_req_addr(lsu_req_addr), .lsu_req_wdata(lsu_req_wdata),
@@ -448,6 +489,21 @@ module core (
     .bid(mst_bid), .bresp(mst_bresp), .bvalid(mst_bvalid), .bready(mst_bready)
 
   );
+`ifdef PERF_ENABLE
+  perf u_per (
+      .clk(clk), .rst(rst), .halt(halt),
+      .ifu_done(arb_ifu_done), .at_ifu(state_now == `ST_FET),
+      .lsu_done(arb_lsu_done), .at_lsu(state_now == `ST_MEM),
+      .retire(retire),
+      .is_alu(is_alu), .is_lui(is_lui), .is_sys(is_sys),
+      .is_load(is_load), .is_store(is_store), .is_branch(is_branch),
+      .is_jump(is_jump), .is_csr(is_csr)
+  );
+`endif
+
+
+
+
   // ── LFSR:每拍推进, 按阈值产生随机总线停顿 ──
   // lfsr 输出 1~255(不含 0), 阈值 16 → 约 1/16 概率停一拍
 `ifdef HAS_LFSR
@@ -607,7 +663,7 @@ module core (
 `ifdef DPI_MEM
   // DPI 模式: 取指/访存经 DPI-C 读写 NEMU pmem, 只保留一个实例。
   // pmem 段 = 0x80000000~0x87FFFFFF (128MB), 由 xbar 的 mem 从口统一路由。
-  dpic_mem u_mem (
+  dpic_mem #(.R(5)) u_mem (
     .clk(clk),
     .araddr(dmem_araddr), .arvalid(dmem_arvalid), .arready(dmem_arready),
     .rdata(dmem_rdata), .rresp(dmem_rresp), .rvalid(dmem_rvalid), .rready(dmem_rready),

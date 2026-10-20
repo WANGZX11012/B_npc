@@ -31,6 +31,7 @@ module CSRFile#(
 );
     reg [31:0] csr_read;
     reg [63:0] mcycle;
+    reg [63:0] minstret;      // 退休指令数
     reg [31:0] mvendroid, marchid;
     reg [31:0] mcause, mepc, mstatus, mtvec;
 
@@ -117,10 +118,22 @@ module CSRFile#(
         12'h342: csr_read = mcause;
         12'h300: csr_read = mstatus;
         12'h305: csr_read = mtvec;
+        12'hB02: csr_read = minstret[31:0];    // ★ minstret 低 32
+        12'hB82: csr_read = minstret[63:32];   // ★ minstret 高 32
         default: csr_read = 32'b0;
     endcase
 
    end
+
+    always @(posedge clk)   //统计指令数
+	begin
+	   if(rst)
+	       minstret <= 64'b0;
+	   else if(at_state_wb)
+	       minstret <= minstret + 64'b1;
+	end
+
+   
 
     assign csr_data = csr_read;
     assign csr_mtvec = mtvec;
