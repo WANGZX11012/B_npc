@@ -13,8 +13,6 @@
 //
 // 寄存器传递格式 (与 NEMU ref.c 约定一致): 35 个 uint32_t
 //   [0]=pc, [1..32]=gpr[0..31], [33]=mcycle_lo, [34]=mcycle_hi
-// 注意: 不做 CSR 的 difftest! mcycle 字段保留仅因 ref.c 的 regcpy 固定
-//       访问 r[33]/r[34], 若不保留会越界. 我们始终填 0, 不读取/比对.
 // ============================================================================
 
 #include "difftest.h"
@@ -63,51 +61,28 @@ static const uint32_t MEM_BASE = 0x80000000u;
 #define ENABLE_DIFFTEST 0
 #endif
 
-// ============================================================================
-// load_image_bin — 把 .bin 镜像载入 DUT 物理内存 (pmem_words[]), 并(若开 difftest)同步 REF
-// 本函数无条件可用: DPI_MEM 模式下 DUT 物理内存在 C++ 侧 pmem_words[],
-// 必须有镜像来源, 不能依赖 difftest 开关。
-// ============================================================================
-static void load_image_bin(const char *img_path)
+static bool is_csr_inst(uint32_t inst)   //访问csr指令函数判断
 {
-  // ① 完全没给镜像 → 灌内置默认程序
-  if (img_path == nullptr || img_path[0] == '\0')
-  {
-    dpi_load_default();          // ★ 挪到这一支!
-    return;
-  }
-
-  // ② 给了路径但打不开 → 这是错误, 别静默兜底(否则打错路径会莫名跑默认程序)
-  FILE *fp = fopen(img_path, "rb");
-  if (fp == nullptr)
-  {
-    std::fprintf(stderr, "difftest: cannot open image %s\n", img_path);
-    abort();
-  }
-
-  fseek(fp, 0, SEEK_END);
-  long size = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
-
-  if (size <= 0) { fclose(fp); return; }
-
-  uint8_t *buf = new uint8_t[size];
-  size_t rd = fread(buf, 1, size, fp);
-  fclose(fp);
-
-  if (rd > 0) {
-    // ① 先把镜像载进 DUT 自己的 pmem_words[] (DUT 内存真相, 无条件执行)
-    dpi_load_bin(buf, (size_t)rd);
-#if ENABLE_DIFFTEST
-    // ② 再把 DUT 内存拷出, 同步给 REF (NEMU pmem). 方向: DUT -> REF
-    uint8_t *out = new uint8_t[rd];
-    dpi_pmem_copy_out(out, (size_t)rd);
-    ref_difftest_memcpy(MEM_BASE, out, rd, DIFFTEST_TO_REF);
-    delete[] out;
-#endif
-  }
-  delete[] buf;
+  return (inst & 0x7F) == 0x73 && ((inst >> 12) & 0x7) != 0x0;
 }
+
+static bool ref_can_exec_csr(uint32_t inst)   // 如果可以执行 让nemu继续执行 然后再同步
+{
+  uint32_t funct3 = (inst >> 12) & 0x7;
+  uint32_t csr    = (inst >> 20) & 0xFFF;
+  if (funct3 != 0x1 && funct3 != 0x2) return false;          // 只 csrrw / csrrs
+  return csr == 0x300 || csr == 0x305 ||                     // mstatus / mtvec
+         csr == 0x341 || csr == 0x342;                       // mepc    / mcause
+}
+
+static void sync_dut_to_ref(uint32_t dut_pc, const uint32_t *dut_gpr) // 把npc的寄存器值 同步给nemu(ref)
+{
+  RefCPUState st = {};                   // mcycle_lo/hi 保持 0, REF 侧不用
+  st.pc = dut_pc;
+  for (int i = 0; i < 32; i++) st.gpr[i] = dut_gpr[i];
+  ref_difftest_regcpy(&st, DIFFTEST_TO_REF);
+}
+
 
 #if ENABLE_DIFFTEST
 
@@ -160,7 +135,6 @@ static void checkregs(const RefCPUState &ref, uint32_t dut_pc, uint32_t dut_inst
   // ebreak (nemu_trap): 程序终止, DUT PC 停在原地, REF PC 已 +4,
   // 两边对终止指令的 PC 语义允许不同, 跳过 PC 比对
   bool is_ebreak = (dut_inst == 0x00100073);
-
   // PC 比对
   if (!is_ebreak && ref.pc != dut_pc) 
   {
@@ -170,18 +144,9 @@ static void checkregs(const RefCPUState &ref, uint32_t dut_pc, uint32_t dut_inst
     diff_failed = true;
     return;
   }
-
-  // 跳过 csrr mcycle/mcycleh 的 GPR 比对（mcycle 值不一致，不比对）
-  uint32_t csr_addr = (dut_inst >> 20) & 0xFFF;
-  int skip_rd = -1;
-  if (csr_addr == 0xB00 || csr_addr == 0xB80) {
-    skip_rd = (dut_inst >> 7) & 0x1F;
-  }
-
   // 32 个 GPR 比对
   for (int i = 0; i < 32; i++) 
   {
-    if (i == skip_rd) continue;
     if (ref.gpr[i] != dut_gpr[i])
     {
       std::fprintf(stderr,
@@ -194,28 +159,33 @@ static void checkregs(const RefCPUState &ref, uint32_t dut_pc, uint32_t dut_inst
 }
 
 // ============================================================================
-// difftest_init — 初始化 DiffTest (NPC 主程序启动时调用一次)
+// difftest_init — 初始化 DiffTest (NPC 主程序启动时调用一次) npc读完文件后调用
 // ============================================================================
-void difftest_init(uint32_t dut_pc, const char *img_path)
+void difftest_init(uint32_t dut_pc)
 {
   ref_cpu = {};
   diff_failed = false;
 
-  // ① 加载 REF .so, 解析 API 符号, 调用 ref_difftest_init()
+  // ① 加载 REF .so, 解析 API 符号
   load_ref_so("./build/ref.so");
 
-  // ② 内存同步: :把 .bin 字节拷给 NEMU 的 pmem,让 REF 内存和 NPC 的 inst_mem 内容一致。
-  load_image_bin(img_path);
+  // ② 内存同步: DUT -> REF (镜像此时已由 dpi_load_image() 装进 DUT)
+  size_t n = dpi_pmem_image_bytes(); // 获取大小
+  if (n > 0)
+  {
+    uint8_t *out = new uint8_t[n];   // 定义缓冲区
+    dpi_pmem_copy_out(out, n);   // 把读到的指令放到缓冲区
+    ref_difftest_memcpy(MEM_BASE, out, n, DIFFTEST_TO_REF);   // 缓冲区赋值到nemu
+    delete[] out;
+  }
 
-  // ③ 寄存器同步: 把 NPC 复位后的初始 PC 和 32 个 GPR 通过 regcpy(→REF) 同步给 NEMU。
-  //这一步保证 REF 和 DUT 站在同一起跑线:PC 都是 0x80000000,GPR 都是 0。
-  //   dut_init.pc = dut_pc;     等价于  r[0]     = dut_pc;   (NEMU 读 r[0]→cpu.pc)
-  //   npc_get_gprs(dut_init.gpr);等价于  r[1..32] = gpr[0..31]; (NEMU 读 r[1..32]→cpu.gpr[])
+  // ③ 寄存器同步: PC + 32 个 GPR
   RefCPUState dut_init = {};
   dut_init.pc = dut_pc;
   npc_get_gprs(dut_init.gpr);
   ref_difftest_regcpy(&dut_init, DIFFTEST_TO_REF);
 }
+
 
 // ============================================================================
 // difftest_step — 每条指令完成后调用一次: REF 执行 1 条, 然后比对
@@ -224,41 +194,36 @@ bool difftest_step(uint32_t dut_pc, uint32_t dut_inst, const uint32_t *dut_gpr)
 {
   if (diff_failed) return false;  // 已经失败, 不再继续
 
-  // MMIO 指令: 跳过 REF 执行, 直接同步 DUT → REF (RTL 的 mmio_dbg 指示)
+  // ① MMIO 指令: REF 没有对应外设 → 不执行, 以 DUT 为准
   if (npc_get_mmio())
   {
-    RefCPUState dut_state = {};   // 不做 CSR difftest, mcycle 恒 0
-    //   dut_state.pc = dut_pc;              等价于  r[0]     = dut_pc;
-    //   dut_state.gpr[i] = dut_gpr[i];     等价于  r[1..32] = dut_gpr[0..31];
-    // NEMU 把 r[0..32] 读进 cpu.pc/cpu.gpr, 让 REF 寄存器跟上 DUT (单向同步, 不比对)
-    dut_state.pc = dut_pc;
-    for (int i = 0; i < 32; i++) dut_state.gpr[i] = dut_gpr[i];
-    ref_difftest_regcpy(&dut_state, DIFFTEST_TO_REF);
+    sync_dut_to_ref(dut_pc, dut_gpr);
     return true;
   }
 
-  // ① REF 执行一条指令
+// CSR 策略: 一律不比对 rd, 只做 DUT -> REF 单向同步 (mcycle 语义两边不同)。
+//          REF 能执行的 CSR 指令仍让它执行, 以保持 mtvec/mstatus 的演进。
+
+  if (is_csr_inst(dut_inst))
+  {
+    if (ref_can_exec_csr(dut_inst))
+      ref_difftest_exec(1);            // 让 REF 的 CSR 状态推进 (不读它的结果)
+    sync_dut_to_ref(dut_pc, dut_gpr);  // 以 DUT 为准, 同时防止错值传播
+    return true;
+  }
+
+  // 普通指令: REF 真执行, 再全量比 32 个 GPR
   ref_difftest_exec(1);
-
-  // ② 读回 REF 的寄存器: NEMU 把 cpu.pc/cpu.gpr 写进 r[0..32]
-  //   ref_cpu.pc        等价于  r[0]     (NEMU 写回的 PC)
-  //   ref_cpu.gpr[i]    等价于  r[1..32] (NEMU 写回的 GPR)
-  // 随后 checkregs 按结构体成员读 ref_cpu.pc / ref_cpu.gpr[i] 与 DUT 比对
   ref_difftest_regcpy(&ref_cpu, DIFFTEST_TO_DUT);
-
-  // ③ 逐寄存器比对
   checkregs(ref_cpu, dut_pc, dut_inst, dut_gpr);
 
   return !diff_failed;
 }
+
 #else
 
-// 没启用 difftest 时, 仍需把镜像载进 DUT 自己的 pmem_words[] (dpic 内存真相)
-void difftest_init(uint32_t dut_pc, const char *img_path)
-{
-  (void)dut_pc;
-  load_image_bin(img_path);
-}
+// difftest 关闭: 镜像已由 dpi_load_image() 装好, 这里无事可做
+void difftest_init(uint32_t dut_pc) { (void)dut_pc; }
 
 bool difftest_step(uint32_t dut_pc, uint32_t dut_inst, const uint32_t *dut_gpr)
 {

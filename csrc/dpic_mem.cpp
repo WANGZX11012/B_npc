@@ -24,47 +24,40 @@ static uint32_t dpi_addr_to_index(uint32_t addr)
   return (addr - DPI_PMEM_BASE) >> 2;
 }
 
-// ── 镜像加载 / 初始化 (main 在仿真前调用) ─────────────────────────────
-bool dpi_load_image(const char *path)
+// ── 镜像装载 (唯一入口): raw .bin, 字节 0 落在 DPI_PMEM_BASE ────────────
+//   空路径 → 内置默认程序; 打不开/为空 → 报错 abort (绝不静默兜底)
+void dpi_load_image(const char *path)
 {
-  FILE *fp = fopen(path, "r");
-  if (fp == nullptr) { perror("dpi_load_image fopen"); return false; }
-
-  // 简单 hex 解析: 每行 "addr: word" 或 "@addr word ...", 这里只支持
-  // abstract-machine tools/bin2readmemh.py 产出的 "@addr data data ..." 格式。
-  // 注: 与单周期保持一致, 足以支撑 amtest/cpu-tests。
-  uint32_t cur = 0;
-  char line[512];
-  while (fgets(line, sizeof(line), fp))
+  if (path == nullptr || path[0] == '\0')
   {
-    char *tok = strtok(line, " \t\r\n");
-    while (tok != nullptr)
-    {
-      if (tok[0] == '#' || tok[0] == '@')
-      {
-        if (tok[0] == '@')
-        {
-          // "@<字地址>" -> 转字节地址
-          uint32_t waddr = (uint32_t)strtoul(tok + 1, nullptr, 16);
-          cur = waddr << 2;
-        }
-        break;  // 注释行 / 地址行跳过剩余 token
-      }
-      uint32_t v = (uint32_t)strtoul(tok, nullptr, 16);
-      uint32_t idx = dpi_addr_to_index(cur);
-      if (idx < DPI_PMEM_MAX_WORDS)
-      {
-        pmem_words[idx] = v;
-        if (idx + 1 > pmem_words_size) pmem_words_size = idx + 1;
-      }
-      cur += 4;
-      tok = strtok(nullptr, " \t\r\n");
-    }
+    dpi_load_default();
+    return;
   }
+
+  FILE *fp = fopen(path, "rb");
+  if (fp == nullptr) { perror("dpi_load_image fopen"); abort(); }
+
+  fseek(fp, 0, SEEK_END);
+  long size = ftell(fp);
+  fseek(fp, 0, SEEK_SET);
+  if (size <= 0) { fclose(fp); fprintf(stderr, "npc: empty image %s\n", path); abort(); }
+
+  uint8_t *buf = new uint8_t[size];
+  size_t rd = fread(buf, 1, (size_t)size, fp);
   fclose(fp);
-  printf("[dpic_mem] loaded image %s, %zu words\n", path, pmem_words_size);
-  return true;
+
+  dpi_load_bin(buf, rd);     // 字节搬运交给 dpi_load_bin
+  delete[] buf;
+
+  printf("[dpic_mem] loaded %s (%zu bytes, %zu words)\n", path, rd, pmem_words_size);
 }
+
+
+size_t dpi_pmem_image_bytes(void)
+{
+  return pmem_words_size * sizeof(uint32_t);
+}
+
 
 // ── 内置默认程序 (与 NEMU 一致, 无镜像时使用) ──────────────────────────
 //   对应 nemu/src/isa/riscv32/init.c 的 img[]:
@@ -89,8 +82,6 @@ void dpi_load_default(void)
 }
 
 
-
-
 // raw .bin: 线性布局, 字节 0 落在 MEM_BASE (0x80000000)。
 // 逐字节填入 pmem_words[] —— 与 NEMU ref.c 的
 //   memcpy(guest_to_host(MEM_BASE), buf, rd)
@@ -107,13 +98,6 @@ void dpi_load_bin(const uint8_t *buf, size_t len)
   pmem_words_size = (n + 3) / sizeof(uint32_t);
 }
 
-void dpi_init_pmem(size_t bytes)
-{
-  size_t words = (bytes == 0) ? 1 : (bytes / 4);
-  if (words > DPI_PMEM_MAX_WORDS) words = DPI_PMEM_MAX_WORDS;
-  pmem_words_size = words;
-  for (size_t i = 0; i < pmem_words_size; i++) pmem_words[i] = 0;
-}
 
 // ── DUT 内存拷出 (给 difftest 初始化 REF 用, 方向 DUT -> NEMU) ──────────
 // 逐字节拷出, 与 dpi_load_bin 对称。

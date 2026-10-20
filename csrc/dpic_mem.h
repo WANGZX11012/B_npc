@@ -18,24 +18,21 @@ extern "C" {
 // DUT 物理内存基址 (与 NEMU CONFIG_MBASE 一致, 仅用于地址映射, 不依赖 NEMU)
 #define DPI_PMEM_BASE 0x80000000u
 
-// 由镜像加载填充 DUT 内存 (main 在仿真前调用)
-bool dpi_load_image(const char *path);
-// 直接把 raw .bin 线性字节 (从 MEM_BASE 起) 填进 DUT pmem_words[]。
-// difftest 启动时先调它把镜像载进 DUT, 再用 dpi_pmem_copy_out 同步给 REF。
-void dpi_load_bin(const uint8_t *buf, size_t len);
-// 无镜像时的兜底初始化
-void dpi_init_pmem(size_t bytes);
-// 把 DUT 内存当前内容拷出, 供 difftest 初始化 REF 用 (方向: DUT -> NEMU)
+// 装载镜像到 DUT pmem (唯一入口): raw .bin, 字节 0 落在 DPI_PMEM_BASE
+//   空路径 → 内置默认程序; 打不开/为空 → 报错 abort
+void dpi_load_image(const char *path);
+
+// DUT 内存已装载镜像的字节数 (difftest 同步 REF 用)
+size_t dpi_pmem_image_bytes(void);
+
+// 把 DUT 内存拷出, 同步给 REF 用 (方向: DUT -> NEMU)
 void dpi_pmem_copy_out(void *dst, size_t bytes);
 
-// 从 DUT pmem 读 4 字节 (被 vsrc/dpic_mem.v 经 DPI-C 调用)
-void dpic_mem_read(unsigned long long addr, unsigned int *rdata);
+// ── 内部工具: 只在本文件使用, 不对外暴露 ──
+static void dpi_load_bin(const uint8_t *buf, size_t len);
+static void dpi_load_default(void);
 
-// 写 4 字节回 DUT pmem (被 vsrc/dpic_mem.v 经 DPI-C 调用, 按 wmask 合并字节)
-void dpic_mem_write(unsigned long long addr, unsigned int wdata, unsigned char wmask);
 
-// 无镜像时的兜底: 灌入 NEMU 风格的默认程序 (auipc/sb/lbu/ebreak)
-void dpi_load_default(void);
 
 
 #ifdef __cplusplus

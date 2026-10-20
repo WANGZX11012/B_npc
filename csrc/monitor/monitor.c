@@ -1,6 +1,8 @@
 #include "npc.h"
 #include "sdb/sdb.h"
 #include "difftest.h"
+#include "dpic_mem.h"     // dpi_load_image()
+
 #include <stdio.h>
 #include <string.h>
 
@@ -40,9 +42,11 @@ void init_monitor(int argc, char *argv[])
 #ifndef ENABLE_DIFFTEST
 #define ENABLE_DIFFTEST 0
 #endif
-  // DPI_MEM 模式下 DUT 物理内存在 C++ 侧 pmem_words[], 必须有镜像来源,
-  // 故无论是否开 difftest, 都要调 difftest_init 加载镜像(其内部再按需同步 REF)。
-  difftest_init(npc_pc(), img_path);
+  // ① 装载镜像 → DUT 物理内存 (与 difftest 无关, 无条件执行)
+  dpi_load_image(img_path);
+  // ② 启动 DiffTest (可选: REF 启动 + 内存/寄存器同步)
+  difftest_init(npc_pc());
+
 #if ENABLE_DIFFTEST
   printf("DiffTest: " ANSI_FMT("ON", ANSI_FG_GREEN) "\n");
 #else
