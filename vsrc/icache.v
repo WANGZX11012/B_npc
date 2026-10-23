@@ -23,7 +23,9 @@ module icache #(
   output wire        mem_req_valid,
   output wire [31:0] mem_req_addr,
   input  wire        mem_done,
-  input  wire [31:0] mem_rdata
+  input  wire [31:0] mem_rdata,
+
+  output wire        miss_evt
 );
 
     // ── 派生参数 ──
@@ -118,15 +120,23 @@ module icache #(
   assign mem_req_addr  = (state == S_IDLE) ? blk_base
                                            : (miss_addr + (refill_w_off << 2));
 
-  wire refill_done = (state == S_WAIT) && mem_done &&
-                     (refill_w_off == WORDS - 1) && ifu_req_valid;   // 如果传输大于4B（好几个指令） 就要所有传输完才done
+
+  wire refill_fin  = (state == S_WAIT) && mem_done && (refill_w_off == WORDS - 1);
+  wire refill_done = refill_fin && ifu_req_valid;
+
   assign ifu_done  = ((state == S_IDLE) && ifu_req_valid && hit) || refill_done;
 
-
+  // refill 期间取数: 最后一个字还停在 mem_rdata 上(data 是非阻塞赋值, 当拍未写入),
+  // 若请求的正好是块内最后一个字则旁路; 其余字早已写进 data。
+  //   一律用锁存的 miss_idx / miss_word_idx: access_fault 可在 refill 中途改写 pc。
   wire [31:0] refill_word = data[miss_idx*WORDS + miss_word_idx];
-   // 最后一个字还停在 mem_rdata 上(data 是非阻塞赋值), 直接旁路总线数据
+
   assign ifu_rdata = refill_done ? ((miss_word_idx == WORDS - 1) ? mem_rdata : refill_word)
-                                 : hit_word;      // hit 路径才用 hit_word
+                                 : hit_word;
+
+  // 块级 miss 脉冲: 一次块填充 = 1 个 miss (不含握手条件, 供 perf 计数)
+  assign miss_evt  = refill_fin;
+
 
 
 `ifdef PRINT_ICACHE

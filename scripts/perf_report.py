@@ -4,6 +4,12 @@
 用法:
     perf_report.py <perf.log>           # 可读报告 + CSV 行
     perf_report.py <perf.log> --csv     # 只打印 CSV 行(追加到 perf.csv 用)
+
+正则必须跟着 vsrc/perf.v 的 $display 走:
+    [perf] Total insts : N        ← 冒号前有空格
+    [perf] ifu  ev=N (总线事务) cyc=M  miss=K (块级)
+    [perf] lsu  ev=N (访存次数)     cyc=M
+    [perf] alu   insts=N cycles=M cpi=x.xx    ← 是等号, 不是冒号
 """
 import re
 import subprocess
@@ -21,22 +27,25 @@ def g(pat, default=None):
 
 
 # ── 抓数 ──
-insts = g(r"Total insts:\s*(\d+)")
-cycles = g(r"Total cycles:\s*(\d+)")
+insts = g(r"Total insts\s*:\s*(\d+)")
+cycles = g(r"Total cycles\s*:\s*(\d+)")
 if not insts or not cycles:
     print("!! 日志里没有 [perf] 输出, 确认 CONFIG_PERF=y", file=sys.stderr)
     sys.exit(1)
 
+# ev 与 cyc 之间可能夹着说明文字, 用 .*? 跨过去
 ifu_ev = g(r"ifu\s+ev=(\d+)", 0)
-ifu_cy = g(r"ifu\s+ev=\d+\s+cyc=(\d+)", 0)
+ifu_cy = g(r"ifu\s+ev=\d+\b.*?cyc=(\d+)", 0)
 lsu_ev = g(r"lsu\s+ev=(\d+)", 0)
-lsu_cy = g(r"lsu\s+ev=\d+\s+cyc=(\d+)", 0)
+lsu_cy = g(r"lsu\s+ev=\d+\b.*?cyc=(\d+)", 0)
+miss_n = g(r"miss_n=(\d+)", 0)
 
-CATS = ["alu", "lui", "load", "store", "branch", "jmp", "csr", "sys"]
+# 分类行用的是 "insts=" / "cycles="; br 打印成 "br"
+CATS = ["alu", "lui", "load", "store", "br", "jmp", "csr", "sys"]
 mix = []
 for n in CATS:
-    c = g(rf"{n}\s+insts:\s*(\d+)", 0)
-    y = g(rf"{n}\s+insts:\s*\d+\s+cycles:\s*(\d+)", 0)
+    c = g(rf"{n}\s+insts=(\d+)", 0)
+    y = g(rf"{n}\s+insts=\d+\s+cycles=(\d+)", 0)
     if c:
         mix.append((n, c, y))
 mix.sort(key=lambda x: -x[1])

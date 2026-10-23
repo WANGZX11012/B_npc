@@ -85,6 +85,7 @@ module core (
   wire [31:0] ic_rdata;
   wire        ic_mem_req_valid;
   wire [31:0] ic_mem_req_addr;  
+  wire        ic_miss_evt;          // icache → perf 块级 miss
 
   // ═══════════════ icache ↔ arbiter ═══════════════
   wire        arb_ifu_done;     // arbiter → IFU (握手完成)
@@ -333,7 +334,7 @@ module core (
   u_icache (
     .clk(clk),  .rst(rst), .halt(halt),
     .ifu_req_addr(ifu_req_addr), .ifu_req_valid(ifu_req_valid),
-    .ifu_rdata(ic_rdata), .ifu_done(ic_done),
+    .ifu_rdata(ic_rdata), .ifu_done(ic_done), .miss_evt(ic_miss_evt), 
     .mem_req_valid(ic_mem_req_valid), .mem_req_addr(ic_mem_req_addr),
     .mem_rdata(arb_ifu_rdata), .mem_done(arb_ifu_done)
   );
@@ -484,13 +485,15 @@ module core (
 `ifdef PERF_ENABLE
   perf u_per (
       .clk(clk), .rst(rst), .halt(halt),
-      .ifu_done(arb_ifu_done), .at_ifu(state_now == `ST_FET),
+      .ifu_done(arb_ifu_done), .ifu_miss(ic_miss_evt), .at_ifu(state_now == `ST_FET),  // 新增 ifu_miss
       .lsu_done(arb_lsu_done), .at_lsu(state_now == `ST_MEM),
       .retire(retire),
       .is_alu(is_alu), .is_lui(is_lui), .is_sys(is_sys),
       .is_load(is_load), .is_store(is_store), .is_branch(is_branch),
       .is_jump(is_jump), .is_csr(is_csr)
   );
+
+
 `endif
 
 

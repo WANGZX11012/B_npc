@@ -3,7 +3,8 @@
 //
 // 统计口径 (三条铁律, 别混):
 //   ① 相位通道 ifu/lsu: ev = 事件次数, cyc = 处于该相位的周期数
-//      ★ 有 ICACHE 后 ifu_ev 是 "ICACHE→内存" 的事务数 = miss 次数, 不是取指次数
+//      ★ ifu_ev 是 "ICACHE→内存" 的事务数, 多字块下 ≠ miss 次数 (差 WORDS 倍);
+//        miss 次数由 ifu_miss (icache.miss_evt 块级脉冲) 单独计数
 //   ② 指令分类: 门 = retire; cyc = 从上次 retire 到本次的全部拍 (gap+1)
 //      ★ 分类 cyc 互相重叠(都含取指), 不能相加当占比; 只有 ① 能当 Amdahl 的 f
 //   ③ 自校验: retire_cnt / total_insts / total_cycs / cycles 必须两两对上
@@ -11,7 +12,7 @@
 module perf (
     input clk, input rst, input halt,
 
-    input ifu_done, input at_ifu,
+    input ifu_done, input ifu_miss, input at_ifu,   // ifu_done=总线事务数, ifu_miss=块级 miss 脉冲
     input lsu_done, input at_lsu,
 
     input retire,
@@ -49,6 +50,12 @@ module perf (
     perf_counter u_lsu (.clk(clk), .rst(rst),
                         .ev(lsu_done && en), .ph(at_lsu && en),
                         .cnt_ev(lsu_ev), .cnt_cyc(lsu_cyc));
+
+    // ── 块级 miss: icache.miss_evt 是单拍脉冲, 必须过计数器才是"次数" ──
+    wire [63:0] ifu_miss_cnt;
+    perf_counter u_ifu_miss (.clk(clk), .rst(rst),
+                             .ev(ifu_miss && en), .ph(1'b0),
+                             .cnt_ev(ifu_miss_cnt), .cnt_cyc());
 
     // ══ ② 指令分类 + 归因周期 (全 64 位, 一个 always 里统一门控) ══
     reg [63:0] c_alu,   c_lui,   c_load,   c_store,   c_br,   c_jmp,   c_csr,   c_sys;
@@ -97,7 +104,7 @@ module perf (
     localparam [63:0] HIT_TIME = 64'd1;
 
     wire [63:0] fetch_n = total_insts;                                   // 取指次数(1 次/指令)
-    wire [63:0] miss_n  = ifu_ev;                                        // ICACHE miss 次数
+    wire [63:0] miss_n  = ifu_miss_cnt;                                  // 块级 miss 次数
     wire [63:0] hit_n   = (fetch_n > miss_n) ? (fetch_n - miss_n) : 64'd0;   // 防下溢
 
     wire [63:0] fetch_cyc = ifu_cyc;
@@ -119,7 +126,7 @@ module perf (
         if (halt && !halt_r)
         begin
             $display("[perf] ==================== PERF ====================");
-            $display("[perf] ifu  ev=%0d (ICACHE miss)  cyc=%0d", ifu_ev, ifu_cyc);
+            $display("[perf] ifu  ev=%0d (总线事务) cyc=%0d  miss=%0d (块级)", ifu_ev, ifu_cyc, miss_n);
             $display("[perf] lsu  ev=%0d (访存次数)     cyc=%0d", lsu_ev, lsu_cyc);
 
             $display("[perf] alu   insts=%0d cycles=%0d cpi=%0d.%02d",
