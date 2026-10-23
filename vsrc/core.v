@@ -262,14 +262,6 @@ module core (
   wire        ex_stage_fire    = exm_stage_fire;  // EX 段交班拍(由 EX_MEM 自持)
 
 
-  // ═══════════════ 性能计数器 ═══════════════
-  wire [31:0]  perf_count_ifu_t;  // 次数
-  wire [31:0]  perf_count_ifu_c;  // 周期
-  wire [31:0]  perf_count_lsu_t;  // 次数
-  wire [31:0]  perf_count_lsu_c;  // 周期
-
-
-
   // ── 退休判据(影子已验证与 ctrl_pc_we 逐拍一致后才接管) ──
   //   is_mem  : 本条是 load / store
   //   exm_done: EX/MEM 接力棒的 valid —— EX 段已算完(exm_result 的 valid 位)

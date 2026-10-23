@@ -1,12 +1,37 @@
 #include "npc.h"
 #include "difftest.h"
 #include <stdio.h>
+#include <stdlib.h>     // exit / getenv 之类
+
 
 static uint64_t g_nr_inst = 0;
 
 #ifndef ENABLE_DIFFTEST
 #define ENABLE_DIFFTEST 0
 #endif
+
+#if ITRACE_ENABLE
+static FILE *g_itrace_fp = NULL;
+static int   g_itrace_inited = 0;
+
+static inline void itrace_write(uint32_t pc, uint32_t inst)
+{
+  if (!g_itrace_inited)                       // 懒打开: 第一次才建文件
+  {
+    g_itrace_inited = 1;
+    g_itrace_fp = fopen("build/itrace.bin", "wb");
+    if (!g_itrace_fp) { perror("itrace fopen"); exit(1); }
+  }
+  fwrite(&pc, sizeof(pc), 1, g_itrace_fp);      // 只写 PC, 二进制
+}
+#else
+  #define itrace_write(pc, inst) ((void)0)    // 关掉时零开销
+#endif
+
+
+
+
+
 
 void cpu_exec(int64_t n) 
 {
@@ -19,8 +44,9 @@ void cpu_exec(int64_t n)
       uint32_t after_pc  = npc_pc();
       uint32_t inst      = npc_ir();   // 执行完的指令 (FET 还没覆盖 IR)
 
-      if (after_pc != before_pc || inst == 0x00100073) //加上ebreak的计数
+      if (after_pc != before_pc) //加上ebreak的计数
       {  // PC changed → 一条指令执行完
+        itrace_write(before_pc, inst);
         g_nr_inst++;
       }
 
@@ -67,7 +93,9 @@ void cpu_exec(int64_t n)
   
 
     
-  } 
+  }
+  
+  
   else 
   {
     for (int64_t i = 0; i < n && !npc_halted(); i++)

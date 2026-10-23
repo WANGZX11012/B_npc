@@ -19,6 +19,11 @@
 #include <ctime>
 
 static Vtop *top = nullptr;
+static uint64_t g_cycles = 0;   // 跑了多少个时钟周期 (仿真器侧自己数)
+static uint64_t g_t0_us  = 0;   // 第一个周期时的墙钟 (us)
+
+
+
 
 #if TRACE_ENABLE
 static VerilatedVcdC *tfp = nullptr;
@@ -84,6 +89,9 @@ void npc_reset(void)
 
 void npc_cycle(void) 
 {
+  if (g_cycles == 0) g_t0_us = (uint64_t)rtc_time_us();   // 起点
+  g_cycles++;
+  
   top->clk = 1; top->eval(); TRACE_DUMP(tick++);
   top->clk = 0; top->eval(); TRACE_DUMP(tick++);
 }
@@ -125,6 +133,19 @@ void npc_get_gprs(uint32_t *gpr)
 
 bool npc_get_mmio(void) { return top->mmio_dbg; }
 
-void npc_finish(void) { TRACE_CLOSE(); }
+void npc_finish(void)
+{
+  if (g_cycles)
+  {
+    uint64_t dt = (uint64_t)rtc_time_us() - g_t0_us;      // 墙钟 (us)
+    uint64_t rate = dt ? (g_cycles * 1000000ull / dt) : 0;
+    printf("[mtime] cycles=%llu  host=%llu us  rate=%llu Hz\n",
+           (unsigned long long)g_cycles,
+           (unsigned long long)dt,
+           (unsigned long long)rate);
+  }
+  TRACE_CLOSE();
+}
+
 
 } // extern "C"
