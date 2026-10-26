@@ -4,9 +4,9 @@ module top (
   output wire         halt,
   output wire         aborted,        // 非法指令/异常终止(对齐 NEMU_ABORT)
   output wire [31:0]  pc,
-  output wire [31:0]  ir_dbg,        // IR for monitor
   output wire [2:0]   state_dbg,      // ctrl_state for monitor
-  output wire         inst_retire,    
+  output wire         inst_retire, 
+  output wire [31:0]  retire_inst_dbg,  //刚退休的      
   output wire         mmio_dbg       // 本条指令是否访问外设(difftest)
 );
 
@@ -16,9 +16,9 @@ module top (
     .pc             (pc),
     .halt           (halt),
     .aborted        (aborted),
-    .ir_dbg         (ir_dbg),
     .state_dbg      (state_dbg),
     .inst_retire    (inst_retire),
+    .retire_inst_dbg(retire_inst_dbg),
     .mmio_dbg       (mmio_dbg)
   );
 

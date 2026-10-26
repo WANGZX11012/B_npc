@@ -65,7 +65,7 @@ module core (
   output [31:0] pc,          // 当前 PC, IFU 直接驱动
   output        halt,        // ebreak 时拉高
   output        aborted,     // 非法指令/异常终止(对齐 NEMU_ABORT)
-  output [31:0] ir_dbg,      // IR for monitor
+  output [31:0] retire_inst_dbg,  // 刚退休指令的编码 (difftest 用)
   output [2:0]  state_dbg,   // ctrl_state for monitor
   output reg    inst_retire, // 指令完成标志
   output        mmio_dbg     // 本条指令是否访问了外设(供 difftest 跳过比对)
@@ -304,7 +304,6 @@ module core (
   wire [31:0] trap_pc = irq_taken ? ifu_npc_normal : ir_pc;
   // ── 输出打包 ──
   assign halt      = (IR == 32'h00100073);
-  assign ir_dbg    = IR;
   assign state_dbg = state_now;
   assign aborted   = aborted_r;   // 非法指令/异常终止
   assign mmio_dbg  = mmio_flag_r;
@@ -415,7 +414,7 @@ module core (
   );
 
   // ── CSRFile ──
-  CSRFile #(.ADDR_WIDTH(12)) u_CSRFile (
+  CSRFile u_CSRFile (
     .clk(clk), .rst(rst), .at_state_wb(retire),
     .csr_wen(idu_csr_wen), .csr_s_w(idu_csr_s_w),
     .ecall_trap(idu_npc_sel == `NPC_ECALL),
@@ -718,6 +717,9 @@ module core (
   end
 
   // ── 退休指示: 打一拍输出给 monitor ──
+
+
+
   always @(posedge clk)
   begin
     if (rst)
@@ -729,6 +731,31 @@ module core (
       inst_retire <= retire;
     end
   end
+
+  // ── 退休指令快照: 只在 retire 那一拍锁存 ──
+  //   IFU 的 IR 在退休后一拍就会被下一条指令覆盖, 不能事后去读,
+  //   必须在这一拍拍照, 之后软件随时读都还是那条指令。
+  reg [31:0] retire_inst_r;
+
+  always @(posedge clk)
+  begin
+    if (rst)
+    begin
+      retire_inst_r <= 32'b0;
+    end
+    else if (retire)
+    begin
+      retire_inst_r <= IR;
+    end
+  end
+
+  assign retire_inst_dbg = retire_inst_r;
+
+
+
+
+
+
   // ── Access Fault: 命中即粘住, 直到复位 ──
   //   讲义建议: 未实现 CTE 前不做完整 trap, 先把错误"暴露"出来;
   //   否则 CPU 拿着错误数据继续跑, 故障点离病因几十万拍, 极难查。

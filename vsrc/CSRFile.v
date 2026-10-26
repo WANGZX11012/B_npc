@@ -2,9 +2,7 @@
 // trap 时按 RISC-V 特权规范自动更新 mstatus 位域, 写操作只在 WB 拍(at_state_wb)生效
 
 `include "npc_defs.vh"
-module CSRFile#(
-    parameter ADDR_WIDTH = 12
-) (
+module CSRFile(
     //不需要读使能
     input           clk,
     input           rst,

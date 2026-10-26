@@ -108,15 +108,10 @@ void npc_exec_inst(void) //走完一条指令 500是一条指令的上限时钟�
   while (!top->inst_retire && !top->halt && !top->aborted && ++cnt < 500);
 }
 
-void npc_cont(void) {
-  int cnt = 0;
-  while (!top->halt && cnt++ < 10000)
-    npc_cycle();
-}
 
 bool     npc_halted(void) { return top->halt || top->aborted; } //停下 两种原因都会导致拉高
 uint32_t npc_pc(void)     { return top->pc; }
-uint32_t npc_ir(void)     { return top->ir_dbg; }
+uint32_t npc_retire_inst(void) { return top->retire_inst_dbg; }
 uint8_t  npc_state(void)  { return top->state_dbg; }
 bool     npc_aborted(void) { return top->aborted; }
 

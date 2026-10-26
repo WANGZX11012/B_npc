@@ -39,6 +39,8 @@ void init_monitor(int argc, char *argv[])
 
   npc_reset();
 
+  init_disasm();// 初始化capstone
+
 #ifndef ENABLE_DIFFTEST
 #define ENABLE_DIFFTEST 0
 #endif

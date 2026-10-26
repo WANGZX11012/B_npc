@@ -23,6 +23,7 @@ static inline void itrace_write(uint32_t pc, uint32_t inst)
     if (!g_itrace_fp) { perror("itrace fopen"); exit(1); }
   }
   fwrite(&pc, sizeof(pc), 1, g_itrace_fp);      // 只写 PC, 二进制
+
 }
 #else
   #define itrace_write(pc, inst) ((void)0)    // 关掉时零开销
@@ -42,7 +43,7 @@ void cpu_exec(int64_t n)
       uint32_t before_pc = npc_pc();
       npc_exec_inst();
       uint32_t after_pc  = npc_pc();
-      uint32_t inst      = npc_ir();   // 执行完的指令 (FET 还没覆盖 IR)
+      uint32_t inst      = npc_retire_inst();   // 退休拍快照, 不会被下一条取指覆盖
 
       if (after_pc != before_pc) //加上ebreak的计数
       {  // PC changed → 一条指令执行完
@@ -74,7 +75,7 @@ void cpu_exec(int64_t n)
     if (npc_aborted())
     {
       printf("npc: HIT BAD TRAP (illegal instruction) at pc = 0x%08x, inst = 0x%08x, total_inst = %lu\n",
-             npc_pc(), npc_ir(), g_nr_inst);
+             npc_pc(), npc_retire_inst(), g_nr_inst);
     }
     else
     {
