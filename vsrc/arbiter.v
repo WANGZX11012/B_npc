@@ -5,6 +5,7 @@ module arbiter (
   // ── IFU 私有请求（只读）──
   input  wire         ifu_req_valid,
   input  wire [31:0]  ifu_req_addr,
+  input  wire [7:0]   ifu_req_len,      // IFU 突发拍数-1: 0=单拍
   output wire         ifu_done,
   output wire [31:0]  ifu_resp_rdata,
 
@@ -19,6 +20,7 @@ module arbiter (
   output wire [31:0]  lsu_resp_rdata,
 
   // ── 合并后的单请求 → axi_lite_master ──
+  output wire [7:0]   m_req_len,        // 突发拍数-1
   output wire         m_req_valid,
   output wire         m_req_we,
   output wire [31:0]  m_req_addr,
@@ -66,5 +68,6 @@ module arbiter (
   assign lsu_done       = m_done && !sel_is_ifu;
   assign ifu_resp_rdata = m_resp_rdata;   // 输家 done=0 不会采，直接都接即可
   assign lsu_resp_rdata = m_resp_rdata;   //虽然数据都广播给两个主设备 但是没有done就推进不下去 达到阻塞的效果
+  assign m_req_len      = sel_is_ifu ? ifu_req_len : 8'd0;   // LSU 不 burst
 
 endmodule

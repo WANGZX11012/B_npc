@@ -96,7 +96,7 @@ module ysyx_26020047 (
   wire [31:0] dbg_pc;
   wire        dbg_halt;
   wire        dbg_aborted;
-  wire [31:0] dbg_ir;
+  wire [31:0] dbg_retire_inst;
   wire [2:0]  dbg_state;
   wire        dbg_retire;
   wire        dbg_mmio;
@@ -145,9 +145,9 @@ module ysyx_26020047 (
     .pc          (dbg_pc),
     .halt        (dbg_halt),
     .aborted     (dbg_aborted),
-    .ir_dbg      (dbg_ir),
     .state_dbg   (dbg_state),
     .inst_retire (dbg_retire),
+    .retire_inst_dbg (dbg_retire_inst),
     .mmio_dbg    (dbg_mmio)
   );
 

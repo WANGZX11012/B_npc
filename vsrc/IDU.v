@@ -32,7 +32,10 @@ module IDU (
 
   output [11:0]             csr_idx,
   output                    csr_wen,
-  output                    csr_s_w  //csrrs 还是 csrrw的判断位 决定是否要或rs1
+  output                    csr_s_w,  //csrrs 还是 csrrw的判断位 决定是否要或rs1
+  
+  output                    fence_i
+
 
 );
 
@@ -51,7 +54,7 @@ localparam IMM_J = 3'b100;
   
 
 
-  reg [2:0] imm_type;// 根据指令类型生成的立即数类型控制
+  wire [2:0] imm_type;   // 立即数类型: assign 驱动, 故为 wire
 
   //具体指令的判断译码（组合逻辑中生成 reg 标志位）指令的注册
 
@@ -80,7 +83,8 @@ localparam IMM_J = 3'b100;
   reg is_csrrw; //csr读后写
   reg is_ecall;
   reg is_mret;
-  reg is_fence; // FENCE / FENCE.I（单周期设计中视为 NOP）
+
+  reg is_fence_i; // FENCE / FENCE.I 冲刷icache
 
   //store相关
   reg is_sb;
@@ -160,7 +164,7 @@ localparam IMM_J = 3'b100;
     is_csrrw  = 1'b0;
     is_ecall  = 1'b0;
     is_mret   = 1'b0;
-    is_fence  = 1'b0;
+    is_fence_i  = 1'b0;
 
 
 
@@ -281,7 +285,8 @@ localparam IMM_J = 3'b100;
 
       7'b0001111: // FENCE / FENCE.I — 单周期设计中无需内存屏障，视为 NOP
       begin
-        is_fence = 1'b1;
+        if(funct3 == 3'b001)
+          is_fence_i = 1'b1;
       end
 
       default: ;
@@ -291,29 +296,27 @@ localparam IMM_J = 3'b100;
 
   end
  
-  
+
+
+  // ── 指令大类译码: 供后面 rs1_en/rs2_en/rd_en 复用 ──
+  wire is_rtype  = (opcode == 7'b0110011);   // R-type: add/sub/xor/or/and/sll/srl/sra/slt/sltu
+  wire is_itype  = (opcode == 7'b0010011);   // I-type: addi/xori/ori/andi/slli/srli/srai/slti/sltiu
+  wire is_load   = (opcode == 7'b0000011);   // lb/lbu/lh/lhu/lw
+  wire is_store  = (opcode == 7'b0100011);   // sb/sh/sw
+  wire is_branch = (opcode == 7'b1100011);   // beq/bne/blt/bge/bltu/bgeu
+  wire is_csr    = (opcode == 7'b1110011) && ((funct3 == 3'b001) || (funct3 == 3'b010));
 
   assign rs1 = inst[19:15];
   assign rs2 = inst[24:20];
   assign rd  = inst[11:7];
 
-  // 寄存器读使能！！
+  // 寄存器读使能
   // rs1: addi/add/jalr/lw/lbu/sw/sb/xor/xori/sub 都需要
   // rs2: add/sw/sb/xor/sub 需要
-  assign rs1_en = is_addi | is_jalr | is_add | is_lw | is_lbu | is_sw | is_sb | is_xor | 
-                  is_xori | is_sub | is_or | is_ori | is_slti | is_sltiu | is_bne | is_beq | is_bge | 
-                  is_bgeu | is_blt  | is_bltu | is_lh | is_lhu | is_lb | is_sltu | is_slt | 
-                  is_sh | is_srai | is_sra | is_sll | is_srli | is_srl | is_andi | is_and | is_slli |
-                  is_csrrs | is_csrrw;
+  assign rs1_en = is_rtype | is_itype | is_load | is_store | is_branch | is_jalr | is_csr;
+  assign rs2_en = is_rtype | is_store | is_branch;
+  assign rd_en  = is_rtype | is_itype | is_load | is_lui | is_auipc | is_jal | is_jalr | is_csr;
 
-  assign rs2_en = is_add | is_sw | is_sb | is_xor | is_sub | is_or | is_bne | is_beq | 
-                  is_bge | is_bgeu |  is_blt | is_bltu | is_sltu | is_slt | is_sh | is_sra | is_sll | is_srl | is_and; 
-
-  assign rd_en  = is_addi | is_jal | is_jalr | is_add | is_lui | is_lbu | is_lw | is_auipc | 
-                  is_xor | is_xori | is_sub | is_or | is_ori | is_slti | is_sltiu | is_lh | is_lhu | is_lb | 
-                  is_sltu | is_slt | is_srai | is_sra | is_sll | is_srli | is_srl | is_andi | is_and | is_slli |
-                  is_csrrs | is_csrrw;  //寄存器写使能逻辑
-                  
   
   /*alu related*/
   // 用 case 结构解码 ALU 操作，按 opcode 分组，R-type/I-type 细化
@@ -433,29 +436,22 @@ localparam IMM_J = 3'b100;
   // 访存相关
   assign mem_re = is_lb | is_lbu | is_lw | is_lh | is_lhu;
   assign mem_we = is_sb | is_sw | is_sh;
-  // 访存宽度选择：sb/lbu=字节，sw/lw=字
-  // 其余默认 half（预留给后续 lh/lhu/sh）
-  assign mem_width =  (is_sb | is_lbu | is_lb) ? `MEM_BYTE :
-                      (is_sw | is_lw) ? `MEM_WORD : 
-                      (is_lh | is_lhu | is_sh) ? `MEM_HALF : `MEM_WORD;
+  
+  // 访存宽度: funct3[1:0] 本身就是宽度编码, 与 MEM_BYTE/HALF/WORD 完全一致
+  assign mem_width = funct3[1:0];
+
 
   assign mem_signed = is_lh | is_lb;
+  
   // wb_sel:
-  // 000 -> ALU结果（addi）
-  // 001 -> pc + 4   （jal/jalr）
-  // wb_sel mapping (explicit):
-  // 000 -> ALU result (addi / add)
-  // 001 -> pc + 4 (jal / jalr)
-  // 010 -> mem_data (lw / lbu)
-  // 011 -> imm (lui)
   // 写回来源选择：
   // addi/add -> ALU，jal/jalr -> pc+4，lw/lbu -> MEM，lui -> IMM
-  assign wb_sel = (is_addi | is_add | is_auipc | is_xor | is_xori | is_sub | is_or | is_slti | is_sltiu | is_sltu |
-                   is_ori | is_slt | is_sra | is_srai | is_sll | is_srli | is_srl | is_andi | is_and | is_slli ) ? `WB_ALU :
-                  
-                  (is_jal | is_jalr) ? `WB_PC4 :
-                  (is_lw | is_lbu | is_lh | is_lhu | is_lb) ? `WB_MEM :
-                  (is_lui) ? `WB_IMM : (is_csrrs | is_csrrw) ? `WB_CSR : `WB_ALU;
+  // 写回来源: 分支按互斥优先级排列, ALU 类(R/I/auipc)落到 default
+  assign wb_sel = (is_jal | is_jalr) ? `WB_PC4 :
+                  (is_load)          ? `WB_MEM :
+                  (is_lui)           ? `WB_IMM :
+                  (is_csr)           ? `WB_CSR : `WB_ALU;
+
 
   
   
@@ -463,40 +459,29 @@ localparam IMM_J = 3'b100;
                        is_bgeu ? `BR_BGEU : is_blt  ? `BR_BLT :
                        is_bltu ? `BR_BLTU : `BR_NONE;
 
-  // RV32 shift-immediate 非法编码：inst[25] (= shamt[5]) 必须为 0
+  // RV32 shift-immediate 非法编码：inst[25] (= shamt[5]) 必须为 0 移位时的非法判断
   wire illegal_shift_imm = (opcode == 7'b0010011) &&
                            ((funct3 == 3'b001) || (funct3 == 3'b101)) &&
                            inst[25];
 
-  // invalid: 仅当未匹配到任何已实现指令时为 1
+  // invalid: 合法指令 = 写回类(rd_en) | store | 分支 | ecall/ebreak/mret/fence
   assign invalid = illegal_shift_imm |
-                   ~(is_addi | is_jal | is_jalr | is_add | is_lui | is_lbu | is_lw |
-                     is_auipc | is_xor | is_xori | is_sub | is_or | is_ori | is_slti |
-                     is_sltiu | is_sw | is_sb | is_sh | is_ebreak | is_bne | is_bge |
-                     is_bgeu | is_blt | is_bltu | is_beq | is_lh | is_lhu | is_lb |
-                     is_sltu | is_slt | is_srai | is_sra | is_sll | is_srli | is_srl | is_andi | is_and | is_slli |
-                     is_csrrs | is_ecall | is_csrrw | is_mret | is_fence);
+                   ~(rd_en | is_store | is_branch | is_ebreak | is_ecall | is_mret | is_fence_i);
+
 
   // csrrw 总是写 CSR；csrrs 仅在 rs1≠x0 时写（RISC-V 规范要求 rs1=x0 时只读不写）
   assign csr_wen = is_csrrw | (is_csrrs & (rs1 != 5'b0));
   assign csr_s_w = is_csrrs ? 1'b1 : 1'b0 ; //1代表要和rs1或
 
+  assign  fence_i = is_fence_i;
 
-  /*opcode 判断imm 类型*/
-  always @(*)
-  begin
-    case(opcode)
-        7'b0010011: imm_type = IMM_I; // addi, I-type
-        7'b0000011: imm_type = IMM_I; // lw/lbu, I-type
-        7'b1100111: imm_type = IMM_I; // jalr, I-type
-        7'b0010111: imm_type = IMM_U; // auipc, U-type
-        7'b0100011: imm_type = IMM_S; // sw/sb, S-type
-        7'b0110111: imm_type = IMM_U; // lui, U-type
-        7'b1100011: imm_type = IMM_B; // branch, B-type
-        7'b1101111: imm_type = IMM_J; // jal, J-type
-        default:    imm_type = IMM_I;
-    endcase
-  end
+  // 立即数类型: 复用 opcode 大类, 不再重复比较 opcode
+  assign imm_type = (is_itype | is_load | is_jalr) ? IMM_I :
+                    (is_lui   | is_auipc)          ? IMM_U :
+                    (is_store)                     ? IMM_S :
+                    (is_branch)                    ? IMM_B :
+                    (is_jal)                       ? IMM_J : IMM_I;
+
 
   /*立即数生成逻辑 (集成从ImmGen)*/
   wire [31:0] imm_i = {{20{inst[31]}}, inst[31:20]};

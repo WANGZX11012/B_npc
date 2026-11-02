@@ -8,6 +8,7 @@ module axi_xbar(
     input [31:0]            m_araddr,
     input                   m_arvalid,
     output                  m_arready,
+    input [7:0]             m_arlen,  
     //r
     output [31:0]           m_rdata,
     output [1:0]            m_rresp,
@@ -31,9 +32,11 @@ module axi_xbar(
     output [31:0]           mem_araddr,
     output                  mem_arvalid,
     input                   mem_arready,
+    output [7:0]            mem_arlen,
     input [31:0]            mem_rdata,
     input [1:0]             mem_rresp,
     input                   mem_rvalid,
+    input                   mem_rlast,      // mem 从口的突发结束标记
     output                  mem_rready,
     output [31:0]           mem_awaddr,
     output                  mem_awvalid,
@@ -91,7 +94,8 @@ module axi_xbar(
     output                  clint_bready,
 
     //================== 输出给 core 的 MMIO 标记 ==================
-    output                  mmio_sel
+    output                  mmio_sel,
+    output                  m_rlast         //突发传输信号 传给mst
 );
 
  wire ar_uart = (m_araddr[31:3] == 29'h1400007f);  //0xa00003f8~ff, 与 NEMU serial 一致
@@ -117,6 +121,9 @@ assign mem_wvalid   = aw_mem  && m_wvalid;
 assign uart_wvalid  = aw_uart && m_wvalid;
 assign clint_wvalid  = aw_clint && m_wvalid;  // 用 aw_clint 而非 awvalid: awvalid 撤了地址译码还在
 
+
+
+assign mem_arlen   = m_arlen;   // 只有 mem 通道支持突发, 其余从设备无此端口
 //──── 读地址广播 ────
 assign mem_araddr  = m_araddr;
 assign uart_araddr = m_araddr;
@@ -152,6 +159,7 @@ assign m_bresp   = aw_uart ? uart_bresp   : aw_clint ? clint_bresp   : aw_mem ? 
 
 //difftest跳过标记
 assign mmio_sel = ar_uart || ar_rtc || ar_clint || aw_uart || aw_rtc || aw_clint;
+assign m_rlast   = ar_mem ? mem_rlast : 1'b1; // 突发传输
 
 
 endmodule

@@ -1,6 +1,13 @@
 `include "npc_defs.vh"
 
 // LSU — 访存控制器：AXI4-Lite 主设备（读+写，复用 axi_lite_master）
+`ifdef MTRACE
+  // 每次 LSU 访存完成时把地址送给 C++ 侧
+  import "DPI-C" function void mtrace_log(input int addr, input int val,
+                                          input int is_write, input int size);
+`endif
+
+
 
 module LSU (
 
@@ -50,6 +57,8 @@ module LSU (
   assign in_ready = !busy;         // 手里空着就能收
   assign rdata_out = rdata_r;      // 输出从锁存器出(MEM/WB 接力棒的 data)
   assign res_valid = res_rdy;
+
+  reg        is_we_r;              // 这次访存是写吗
 
 
   /*  写逻辑  */
@@ -117,6 +126,7 @@ module LSU (
       rsize_r <= 2'b0;
       wdata_r <= 32'b0;
       rdata_r <= 32'b0;
+      is_we_r <= 1'b0;
     end
     else if (!busy && in_valid && is_access)
     begin
@@ -125,6 +135,7 @@ module LSU (
       wmask_r <= wmask_gen;
       rsize_r <= rsize_gen;
       wdata_r <= wdata_gen;
+      is_we_r <= mem_we;           // 锁存读写方向
     end
     else if (busy && handshake_done)
     begin
@@ -137,7 +148,19 @@ module LSU (
       res_rdy <= 1'b0;
     end
   end  
-
+  
+`ifdef MTRACE
+  // handshake_done: 读=rvalid&&rlast, 写=bvalid, 一次事务恰好一拍
+  // 此时 addr_r / is_we_r 稳定, 读数据由 rdata_final 组合给出
+  always @(posedge clk)
+  begin
+    if (!rst && busy && handshake_done)
+      mtrace_log(addr_r,
+                 is_we_r ? wdata_r : rdata_final,
+                 is_we_r,
+                 {30'd0, rsize_r});
+  end
+`endif
 
 
 

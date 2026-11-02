@@ -1,0 +1,16 @@
+===== cpu-tests (独立 bin, 不需要 mainargs) =====
+[19:02:36] add-riscv32-npc        HIT GOOD TRAP  total_inst = 2539
+[19:02:37] add-longlong-riscv32-npc HIT GOOD TRAP  total_inst = 3113
+[19:02:37] bit-riscv32-npc        HIT GOOD TRAP  total_inst = 1035
+[19:02:37] bubble-sort-riscv32-npc HIT GOOD TRAP  total_inst = 4627
+[19:02:37] crc32-riscv32-npc      HIT GOOD TRAP  total_inst = 17865
+[19:02:37] div-riscv32-npc        HIT GOOD TRAP  total_inst = 17989
+[19:02:37] dummy-riscv32-npc      HIT GOOD TRAP  total_inst = 712
+[19:02:37] load-store-riscv32-npc HIT GOOD TRAP  total_inst = 1885
+[19:02:37] hello-str-riscv32-npc  HIT GOOD TRAP  total_inst = 2859
+===== am-tests (单 bin, 每次重新 insert mainargs) =====
+[19:02:37] amtest-hello           HIT GOOD TRAP  total_inst = 3386
+[19:02:37] amtest-intr            HIT GOOD TRAP  total_inst = 50076071
+[19:04:31] amtest-rtc             HIT GOOD TRAP  total_inst = 7198
+===== microbench test =====
+[19:06:52] microbench-riscv32-npc HIT GOOD TRAP  total_inst = 538028

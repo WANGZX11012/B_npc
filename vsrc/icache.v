@@ -1,10 +1,11 @@
 `ifndef ICACHE_INDEX_BITS
-  `define ICACHE_INDEX_BITS 4     // 没传宏时的兜底 16个
+  `define ICACHE_INDEX_BITS 2
 `endif
 
 `ifndef ICACHE_BLOCK_BYTES
-  `define ICACHE_BLOCK_BYTES 4     // 没传宏时的兜底 32位每块
+  `define ICACHE_BLOCK_BYTES 16
 `endif
+
 
 module icache #(
   // 块大小要经过处理
@@ -24,6 +25,10 @@ module icache #(
   output wire [31:0] mem_req_addr,
   input  wire        mem_done,
   input  wire [31:0] mem_rdata,
+  output wire [7:0]  mem_req_len,      // 本次 refill 的突发拍数-1: 0=单拍 突发传输和cache的大小有关
+  input  wire        mem_rvalid,       // 本拍 mem_rdata 有效(burst 时每拍一个) 不然不知道完成没
+
+  input  wire        fence_i,
 
   output wire        miss_evt
 );
@@ -84,6 +89,16 @@ module icache #(
       for (i = 0; i < NUM_BLOCKS; i = i + 1)
         valid[i] <= 1'b0;
     end  
+    else if (fence_i)
+    begin
+      for(i = 0; i < NUM_BLOCKS; i ++)
+      begin
+        valid[i] <= 1'b0;  // 清零valid
+      end
+    end
+
+
+
     else 
     begin
       case (state)
@@ -96,46 +111,44 @@ module icache #(
           miss_word_idx <= word_idx;
           refill_w_off <= 32'b0;
         end
-        S_WAIT: 
-        if (mem_done) 
+
+        S_WAIT:
         begin
-           // ① 本拍读回的字, 落进块内 refill_w 号槽位
-          data[miss_idx*WORDS + refill_w_off] <= mem_rdata;
-          // ② 整块填完了吗?
-          if (refill_w_off == WORDS - 1)
+          if (mem_rvalid)                                    // 这一拍有数据 dmem 传过来的
           begin
-              state           <= S_IDLE;
-              valid[miss_idx] <= 1'b1;
-              tag  [miss_idx] <= miss_tag;
+            data[miss_idx*WORDS + refill_w_off] <= mem_rdata; // 写进去
+            refill_w_off <= refill_w_off + 32'd1;             // 偏移+1
           end
-          else
-              refill_w_off <= refill_w_off + 32'd1;
+          if (mem_done)                                      // 这一拍是最后一拍 rlast起作用
+          begin
+            state           <= S_IDLE;                        // 结束
+            valid[miss_idx] <= 1'b1;
+            tag  [miss_idx] <= miss_tag;
+          end
         end
+
         default: state <= S_IDLE;
       endcase
     end
   end
 
-  assign mem_req_valid = (state == S_IDLE) ? (ifu_req_valid && !hit) : 1'b1;
-  assign mem_req_addr  = (state == S_IDLE) ? blk_base
-                                           : (miss_addr + (refill_w_off << 2));
+  // burst: 只在发起那一拍给 valid, 地址保持块首, 长度 = 块内字数-1
+  assign mem_req_valid = (state == S_IDLE) ? (ifu_req_valid && !hit) : 1'b0;
+  assign mem_req_addr  = (state == S_IDLE) ? blk_base : miss_addr;
+  assign mem_req_len   = WORDS - 1;
+  // assign mem_req_len   = 8'b0;
 
+  // 块填充完成脉冲, 供 perf 计 miss
+  wire refill_fin  = (state == S_WAIT) && mem_done;
 
-  wire refill_fin  = (state == S_WAIT) && mem_done && (refill_w_off == WORDS - 1);
-  wire refill_done = refill_fin && ifu_req_valid;
-
-  assign ifu_done  = ((state == S_IDLE) && ifu_req_valid && hit) || refill_done;
-
-  // refill 期间取数: 最后一个字还停在 mem_rdata 上(data 是非阻塞赋值, 当拍未写入),
-  // 若请求的正好是块内最后一个字则旁路; 其余字早已写进 data。
-  //   一律用锁存的 miss_idx / miss_word_idx: access_fault 可在 refill 中途改写 pc。
-  wire [31:0] refill_word = data[miss_idx*WORDS + miss_word_idx];
-
-  assign ifu_rdata = refill_done ? ((miss_word_idx == WORDS - 1) ? mem_rdata : refill_word)
-                                 : hit_word;
+  // refill 完成那拍不给 done: 整块数据是同拍写入 data 的(非阻塞, 下一拍才生效),
+  // 当拍读 data 还是旧值。state 回 S_IDLE 后 valid 已置起, IFU 下一拍自然命中。
+  assign ifu_done  = (state == S_IDLE) && ifu_req_valid && hit; // 命中路径 不命中最后也会命中
+  assign ifu_rdata = hit_word;
 
   // 块级 miss 脉冲: 一次块填充 = 1 个 miss (不含握手条件, 供 perf 计数)
   assign miss_evt  = refill_fin;
+
 
 
 
@@ -143,6 +156,9 @@ module icache #(
   // ── 统计 (仅仿真/调试, 综合时连同寄存器一起消失) ──
   reg [63:0] hit_cnt, miss_cnt;
   reg        halt_r;
+  reg just_refilled;
+  always @(posedge clk) just_refilled <= (state == S_WAIT) && mem_done;
+
 
   always @(posedge clk)
   begin
@@ -156,8 +172,8 @@ module icache #(
     begin
       halt_r <= halt;
 
-      if (state == S_IDLE && ifu_req_valid && hit)
-        hit_cnt  <= hit_cnt  + 64'd1;
+      if (state == S_IDLE && ifu_req_valid && hit && !just_refilled)
+      hit_cnt <= hit_cnt + 64'd1;
       if (state == S_WAIT && mem_done && (refill_w_off == WORDS - 1))
         miss_cnt <= miss_cnt + 64'd1;
 

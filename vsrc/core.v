@@ -86,6 +86,7 @@ module core (
   wire        ic_mem_req_valid;
   wire [31:0] ic_mem_req_addr;  
   wire        ic_miss_evt;          // icache → perf 块级 miss
+  wire [7:0]  ic_mem_req_len;       // icache → arbiter 突发拍数-1
 
   // ═══════════════ icache ↔ arbiter ═══════════════
   wire        arb_ifu_done;     // arbiter → IFU (握手完成)
@@ -115,6 +116,8 @@ module core (
   wire [31:0] arb_req_wdata;    // arbiter → master
   wire [3:0]  arb_req_wstrb;    // arbiter → master
   wire [1:0]  arb_req_rsize;    // arb -> mst
+  wire [7:0]  arb_req_len;      // arbiter → master 的突发长度-1
+
   wire        mst_done;         // master → arbiter (传输完成)
   wire [31:0] mst_resp_rdata;   // master → arbiter (读数据)
 
@@ -139,9 +142,7 @@ module core (
   wire        mst_rlast;
   wire [3:0]  mst_rid, mst_bid;
 `ifndef YSYXSOC
-  // 单跑: 内部从设备(xbar→pmem/uart/rtc/clint)是 AXI4-Lite, 不产生这三根;
-  //       单拍语义下 rlast 恒 1 → done 判据退化成 rvalid
-  assign mst_rlast = 1'b1;
+// 单跑: rlast 由 xbar 从 mem 从口透传上来(单拍时恒 1)
   assign mst_rid   = 4'd0;
   assign mst_bid   = 4'd0;
 `endif
@@ -174,6 +175,7 @@ module core (
   wire [11:0] idu_csr_idx;      // → CSRFile
   wire        idu_csr_wen;      // → CSRFile
   wire        idu_csr_s_w;      // → CSRFile (置位/原值写)
+  wire        idu_fence_i;      // fence i  
 
   // ── 指令分类: 用 opcode[6:0] 做互斥且完备的划分 (RV32I + Zicsr) ──
   wire [6:0] op = IR[6:0];
@@ -212,6 +214,9 @@ module core (
   wire [31:0] dmem_araddr, dmem_awaddr, dmem_wdata;
   wire [3:0]  dmem_wmask;
   wire        dmem_arvalid, dmem_rready, dmem_awvalid, dmem_wvalid, dmem_bready;
+  wire        dmem_rlast; //突发传输 完成标志
+  wire [7:0]  dmem_arlen;      // mem 从口的突发长度-1
+
   // uart 从口
   wire [31:0] uart_araddr, uart_awaddr, uart_wdata;
   wire [3:0]  uart_wmask;
@@ -332,10 +337,14 @@ module core (
   icache 
   u_icache (
     .clk(clk),  .rst(rst), .halt(halt),
+    .fence_i((idu_fence_i) && retire),   //一定要单拍
     .ifu_req_addr(ifu_req_addr), .ifu_req_valid(ifu_req_valid),
     .ifu_rdata(ic_rdata), .ifu_done(ic_done), .miss_evt(ic_miss_evt), 
     .mem_req_valid(ic_mem_req_valid), .mem_req_addr(ic_mem_req_addr),
+    .mem_req_len(ic_mem_req_len),
+    .mem_rvalid(mst_rvalid),
     .mem_rdata(arb_ifu_rdata), .mem_done(arb_ifu_done)
+
   );
 
 
@@ -351,7 +360,8 @@ module core (
     .mem_re(idu_mem_re), .mem_we(idu_mem_we),
     .mem_width(idu_mem_width), .mem_signed(idu_mem_signed),
     .branch_type(idu_branch_type), .invalid(idu_invalid),
-    .csr_idx(idu_csr_idx), .csr_wen(idu_csr_wen), .csr_s_w(idu_csr_s_w)
+    .csr_idx(idu_csr_idx), .csr_wen(idu_csr_wen), .csr_s_w(idu_csr_s_w),
+    .fence_i(idu_fence_i)
   );
 
   // ── 寄存器堆 ──
@@ -440,6 +450,7 @@ module core (
   arbiter u_arb (
     .clk(clk), .rst(rst),
     .ifu_req_valid(ic_mem_req_valid), .ifu_req_addr(ic_mem_req_addr),
+    .ifu_req_len(ic_mem_req_len),                        
     .ifu_done(arb_ifu_done), .ifu_resp_rdata(arb_ifu_rdata),
     .lsu_req_valid(lsu_req_valid), .lsu_req_we(idu_mem_we),
     .lsu_req_addr(lsu_req_addr), .lsu_req_wdata(lsu_req_wdata),
@@ -450,6 +461,7 @@ module core (
     .m_req_addr(arb_req_addr), .m_req_wdata(arb_req_wdata),
     .m_req_wstrb(arb_req_wstrb),
     .m_req_rsize(arb_req_rsize),
+    .m_req_len(arb_req_len),
     .m_done(mst_done), .m_resp_rdata(mst_resp_rdata)
   );
 
@@ -460,6 +472,8 @@ module core (
     .req_valid(arb_req_valid), .req_we(arb_req_we),
     .req_addr(arb_req_addr),   .req_wdata(arb_req_wdata),
     .req_wstrb(arb_req_wstrb),  .req_rsize(arb_req_rsize),
+    .req_len(arb_req_len),
+
     .stall(lfsr_stall),
     // 完成/读数据 → arbiter
     .done(mst_done), .resp_rdata(mst_resp_rdata), 
@@ -585,7 +599,7 @@ module core (
     .m_wdata  (mst_wdata),   .m_wmask   (mst_wstrb),    .m_wvalid  (mst_wvalid),  .m_wready (mst_wready),
     .m_bresp  (mst_bresp),   .m_bvalid  (mst_bvalid),   .m_bready  (mst_bready),
     // 从口 → mem
-    .mem_araddr (dmem_araddr),  .mem_arvalid (dmem_arvalid),  .mem_arready (dmem_arready),
+    .mem_araddr (dmem_araddr),  .mem_arvalid (dmem_arvalid),  .mem_arready (dmem_arready), .mem_rlast  (dmem_rlast),  .mem_arlen(dmem_arlen),
     .mem_rdata  (dmem_rdata),   .mem_rresp   (dmem_rresp),    .mem_rvalid  (dmem_rvalid),  .mem_rready (dmem_rready),
     .mem_awaddr (dmem_awaddr),  .mem_awvalid (dmem_awvalid),  .mem_awready (dmem_awready),
     .mem_wdata  (dmem_wdata),   .mem_wmask   (dmem_wmask),    .mem_wvalid  (dmem_wvalid),  .mem_wready (dmem_wready),
@@ -606,7 +620,8 @@ module core (
     .clint_wdata  (clint_wdata),   .clint_wvalid  (clint_wvalid),   .clint_wready  (clint_wready),
     .clint_bresp  (clint_bresp),   .clint_bvalid  (clint_bvalid),   .clint_bready  (clint_bready),
     // MMIO 标记
-    .mmio_sel (xbar_mmio_sel)
+    .mmio_sel (xbar_mmio_sel),
+    .m_rlast  (mst_rlast), .m_arlen(mst_arlen)
   );
 
   rtc u_rtc (
@@ -659,8 +674,8 @@ module core (
   // pmem 段 = 0x80000000~0x87FFFFFF (128MB), 由 xbar 的 mem 从口统一路由。
   dpic_mem #(.R(5)) u_mem (
     .clk(clk),
-    .araddr(dmem_araddr), .arvalid(dmem_arvalid), .arready(dmem_arready),
-    .rdata(dmem_rdata), .rresp(dmem_rresp), .rvalid(dmem_rvalid), .rready(dmem_rready),
+    .araddr(dmem_araddr), .arvalid(dmem_arvalid), .arready(dmem_arready), .arlen(dmem_arlen),
+    .rdata(dmem_rdata), .rresp(dmem_rresp), .rvalid(dmem_rvalid), .rready(dmem_rready), .rlast(dmem_rlast),
     .awaddr(dmem_awaddr), .awvalid(dmem_awvalid), .awready(dmem_awready),
     .wdata(dmem_wdata), .wmask(dmem_wmask), .wvalid(dmem_wvalid), .wready(dmem_wready),
     .bresp(dmem_bresp), .bvalid(dmem_bvalid), .bready(dmem_bready)
@@ -802,8 +817,10 @@ module core (
   end
   wire access_fault = access_fault_r;
 
-
+`ifdef VERILATOR
 `include "core_dbg.vh"
+`endif
+
 
 endmodule
 

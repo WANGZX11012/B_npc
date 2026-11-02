@@ -398,3 +398,70 @@ Verilated::commandArgs(argc, argv);
 | R | `io_master_rdata` | input | [31:0] |
 | R | `io_master_rlast` | input | 1 |
 | R | `io_master_rid` | input | [3:0] |
+
+# 2026-10-29 B4 阶段工作总结
+
+## 起点
+上次记录 2026-09-29：ysyxSoC 联仿 + DiffTest 通过，无任何性能/综合数据。 现在要跳过SOC的接入 直接进行优化
+
+## 本期完成
+1. icache：参数化（块数/块大小）、直接映射、valid+tag、触发器阵列、状态机 refill。
+2. 突发传输：mem_req_len 贯穿 icache→arbiter→master→xbar，4 拍填满 16B 块，
+   rlast 进状态机判据。
+3. 性能计数器：perf.v/perf_counter.v，统计相位周期、8 类指令、AMAT、自校验。
+4. cachesim：PC 轨迹回放，支持 --sweep 参数扫描。
+5. make perf 一键复现（PERF_SIZE=train/test），输出 CSV。
+6. 综合链路：nangate45 PDK 接入、npc-stub 外设替身、core_syn 瘦顶层、
+   run/prune/summary 目标。
+
+## 实测（microbench train，64B icache）
+insts 196,046,576 / cycles 1,461,358,913 / CPI 7.45 / IPC 0.134
+AMAT 2.73 / miss_rate 9.15% / miss_penalty 19 / data AMAT 14.57 / mem_per_inst 0.11
+自校验：retire、cycles、hit+miss 三项全闭合；两次跑 cycles 逐位相同。
+
+## 综合（nangate45, 400MHz 约束）
+16B + 瘦顶层   18559 um² / 1922 DFF / WNS +0.253 / Fmax 445
+16B + 全端口   19140 um² / 1957 DFF / WNS +0.534 / Fmax 509
+64B + 瘦顶层   22243 um² / 2298 DFF / WNS +0.397 / Fmax 475
+（opt-csr 27475 um² 为失败实验，作废）
+
+## 结论
+1. 面积达标：64B 容量 22243 < 25000，且低于推荐 23000。
+2. burst 使 miss_penalty 从 ~40 降到 19，CPI 9.36→7.45，改善 20.4%。
+3. 关键路径为 RF 读出→bypass→ALU→写回 / csr_mepc，与 icache 容量无关。
+4. 频率瓶颈与面积瓶颈均不在 icache；RF 缩至 RV32E 16 项（-512 DFF）同时改善两者。
+
+## 未完成
+B4.6 形式化验证、B4.8 fence.i 与 SMC、SoC 侧 axi4_delayer、
+内存布局填充实验、cachesim 选型表。
+
+# 2026-11-02 缓存一致性验证 + difftest/SDB 修复
+
+## 一、fence.i 与 bootloader
+
+- IDU 识别 `opcode=0001111 / funct3=001` → `fence_i`；core 接 `(idu_fence_i && retire)` 单拍；icache 收到后清零全部 valid。
+- bootloader 构造：先以 NOP+ret 填充 `0x80100100` 并调用（块进 icache），再改写为 target_code（含 `sb 'B'`）并调用同一地址。
+- **无 fence.i**：命中旧 NOP+ret，`'B'` 从未执行 → 无 `'B'` 输出、GOOD TRAP、`total_inst=795`。
+  这反而是 icache 生效的反证：若全 miss、每次读内存，会正确输出 `'B'`。
+- **加 `asm volatile("fence.i" ::: "memory")`**：输出 `'B'`，一致性正确。
+  `"memory"` clobber 不可省，否则编译器可把 store 重排到 fence.i 之后；
+  `smc.c` 的 `sw` 与 `fence.i` 在同一 asm 块内，天然有序，所以不需要。
+
+## 二、difftest 配合
+
+- NEMU 原本无 fence 解码，smc 在 `0x80000038` 报 invalid opcode 并 abort；在 `inst.c` 的 `inv` 前补 `fence`/`fence.i` 两条 `INSTPAT` 当 NOP。
+- 依据：NEMU 逐条解释执行、无缓存，天然满足 fence.i；REF 是"无缓存"的正确实现，DUT 的 icache 未冲刷就会分叉 → **difftest 可以验证 fence.i**。
+- smc 写 UART（MMIO），difftest 会 `sync_dut_to_ref` 强同步并跳过比对，掩盖不一致；bootloader 写普通内存，才能看到分叉，故用 bootloader 作验证载体。
+
+## 三、顺带修复
+
+| 问题 | 修法 |
+|---|---|
+| `si` 不走 difftest，单步后 `c` 立刻 mismatch（差一条） | 执行逻辑收进 `exec_once()`，`si = cpu_exec(n)` |
+| `cpu_exec(n>0)` 只执行不比对 | 与 `n<0` 共用 `execute()` |
+| ebreak 打印成上一条指令 | `halt=(IR==0x100073)` 是组合信号，会在**上一条退休同一拍**拉高，ebreak 没有独立的一步；改为正常打印 + 单独补 ebreak 行 |
+| icache `hit` 虚高 17.9M（等于 fetch_n） | 改 `hit = fetch - miss`，与 perf 同源 |
+| `si 10` 报 `Usage` | `args` 带行尾 `\n`，`strtol` 的 `endptr` 停在 `\n`；`fgets` 后 strip |
+
+
+

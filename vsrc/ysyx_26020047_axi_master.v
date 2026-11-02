@@ -11,6 +11,7 @@ module  ysyx_26020047_axi_master(
     input  [31:0]   req_wdata,
     input  [3:0]    req_wstrb,
     input  [1:0]    req_rsize,
+    input  [7:0]    req_len,        // 读突发拍数-1: 0=单拍
     input           stall,          // LFSR 随机停顿（无 LFSR 时接 0）
 
     //完成标志
@@ -100,7 +101,7 @@ end
 // ── AXI4 单拍读的固定字段(与状态机无关, 故用常量 assign) ──
 assign arvalid = (state == AR);   // 地址通道有效(AR 状态期间拉高)
 assign arid    = 4'd0;
-assign arlen   = 8'd0;      // 1 拍
+assign arlen   = req_len;   // 0=单拍, 3=4 拍(由 ICache refill 给出)
 assign arsize  = {1'b0, req_rsize};      // 扩展为3位
 assign arburst = 2'b01;     // INCR
 assign araddr = req_addr;   //axi暂时设置读写地址是一个

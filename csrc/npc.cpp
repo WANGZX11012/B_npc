@@ -5,7 +5,7 @@
 #include "Vtop___024root.h"
 #include "verilated.h"
 
-#if TRACE_ENABLE
+#if WAVE_ENABLE
 #include "verilated_vcd_c.h"
 #define TRACE_DUMP(t)   do { if (tfp) tfp->dump(t); } while (0)
 #define TRACE_CLOSE()   do { if (tfp) { tfp->close(); tfp = nullptr; } } while (0)
@@ -25,7 +25,7 @@ static uint64_t g_t0_us  = 0;   // 第一个周期时的墙钟 (us)
 
 
 
-#if TRACE_ENABLE
+#if WAVE_ENABLE
 static VerilatedVcdC *tfp = nullptr;
 static uint64_t tick = 0;
 #endif
@@ -56,7 +56,7 @@ void npc_init(int argc, char *argv[])
   top = new Vtop;
 
   // optional waveform
-  #if TRACE_ENABLE
+  #if WAVE_ENABLE
 
   for (int i = 1; i < argc; i++) 
   {
@@ -70,6 +70,11 @@ void npc_init(int argc, char *argv[])
   }
 
   #endif
+
+  #if MTRACE_ENABLE
+  mtrace_open("build/mtrace.bin");
+  #endif
+
 }
 
 void npc_reset(void) 
@@ -140,6 +145,11 @@ void npc_finish(void)
            (unsigned long long)rate);
   }
   TRACE_CLOSE();
+
+  #if MTRACE_ENABLE
+  mtrace_close();
+  #endif
+
 }
 
 

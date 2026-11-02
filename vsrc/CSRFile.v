@@ -33,6 +33,16 @@ module CSRFile(
     reg [31:0] mvendroid, marchid;
     reg [31:0] mcause, mepc, mstatus, mtvec;
 
+
+    wire [3:0] csr_priv_group = csr_idx[11:8];  // 特权级+权限组
+    wire [7:0] csr_reg_num    = csr_idx[7:0];   // 组内寄存器编号
+
+
+
+
+
+
+
     initial 
     begin
         mvendroid = 32'h79737978;//ysyx
@@ -90,38 +100,51 @@ module CSRFile(
                 mstatus[3] <= 1'b0;          // MIE  <- 0 (关中断, 天然不嵌套)
                 mstatus[12:11] <= 2'b11;     // MPP  <- M-mode
             end
-            else if (csr_wen && at_state_wb) //写值CSR指令
+            
+            else if (csr_wen && at_state_wb && (csr_priv_group == 4'h3)) // 只有 0x3xx 组可写
             begin
-            /* verilator lint_off CASEINCOMPLETE  */ 
-            case (csr_idx)
-                12'h341: mepc    <= csr_s_w ? (csr_wdata |  mepc ) : csr_wdata;  // mepc
-                12'h342: mcause  <= csr_s_w ? (csr_wdata |  mcause ) : csr_wdata;  // mcause
-                12'h300: mstatus <= csr_s_w ? (csr_wdata |  mstatus ) : csr_wdata;  // mstatus
-                12'h305: mtvec   <= csr_s_w ? (csr_wdata |  mtvec ) : csr_wdata;  // mtvec
+            /* verilator lint_off CASEINCOMPLETE  */
+            case (csr_reg_num)
+                8'h41: mepc    <= csr_s_w ? (csr_wdata |  mepc ) : csr_wdata;  // mepc
+                8'h42: mcause  <= csr_s_w ? (csr_wdata |  mcause ) : csr_wdata;  // mcause
+                8'h00: mstatus <= csr_s_w ? (csr_wdata |  mstatus ) : csr_wdata;  // mstatus
+                8'h05: mtvec   <= csr_s_w ? (csr_wdata |  mtvec ) : csr_wdata;  // mtvec
                 default: ;
             endcase
-        end
+            end
+
         end
     
     end
 
-   always @(*) //随时读 
+   // CSR 读: 按高 4 位分组, 0x3xx=trap  0xBxx=计数器  0xFxx=只读 ID
+   always @(*)
    begin
-    case (csr_idx)
-        12'hB00: csr_read = mcycle[31:0];
-        12'hB80: csr_read = mcycle[63:32];
-        12'hf11: csr_read = mvendroid;
-        12'hf12: csr_read = marchid;
-        12'h341: csr_read = mepc;
-        12'h342: csr_read = mcause;
-        12'h300: csr_read = mstatus;
-        12'h305: csr_read = mtvec;
-        12'hB02: csr_read = minstret[31:0];    // ★ minstret 低 32
-        12'hB82: csr_read = minstret[63:32];   // ★ minstret 高 32
-        default: csr_read = 32'b0;
-    endcase
-
+     case (csr_priv_group)
+       4'h3: case (csr_reg_num)
+               8'h00: csr_read = mstatus;
+               8'h05: csr_read = mtvec;
+               8'h41: csr_read = mepc;
+               8'h42: csr_read = mcause;
+               default: csr_read = 32'b0;
+             endcase
+       4'hB: case (csr_reg_num)
+               8'h00: csr_read = mcycle[31:0];
+               8'h02: csr_read = minstret[31:0];
+               8'h80: csr_read = mcycle[63:32];
+               8'h82: csr_read = minstret[63:32];
+               default: csr_read = 32'b0;
+             endcase
+       4'hF: case (csr_reg_num)
+               8'h11: csr_read = mvendroid;
+               8'h12: csr_read = marchid;
+               default: csr_read = 32'b0;
+             endcase
+       default: csr_read = 32'b0;
+     endcase
    end
+
+
 
     always @(posedge clk)   //统计指令数
 	begin
