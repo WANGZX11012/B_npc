@@ -1,11 +1,12 @@
 .DEFAULT_GOAL := all
 
-TOPNAME   = top
 BUILD_DIR = build
 NPC_HOME  = $(abspath .)
 NPC_CSRC  = $(NPC_HOME)/csrc
+TOPNAME   = top
+# 第 8 行改成
+VSRCS = $(sort $(wildcard vsrc/*.v) $(wildcard vsrc/pipe/*.v))
 
-VSRCS  = $(sort $(wildcard vsrc/*.v))
 VHSRCS = $(wildcard vsrc/*.vh)
 CSRCS  = $(NPC_CSRC)/main.c          \
 		$(NPC_CSRC)/npc.cpp         \
@@ -23,15 +24,20 @@ REF_SO    = $(abspath ../nemu/build/riscv32-nemu-interpreter-so)
 
 VERILATOR_FLAGS = --cc --exe --build  --Mdir $(BUILD_DIR) \
                   -I$(abspath vsrc) \
-                  -CFLAGS "-O3 -march=native -DWAVE_ENABLE=$(WAVE_ENABLE) -I$(NPC_CSRC) -I$(NEMU_INC) -I$(NPC_HOME)/tools/capstone/repo/include -DENABLE_DIFFTEST=$(ENABLE_DIFFTEST)" \
-                  -LDFLAGS "-O3 -ldl -L$(NPC_HOME)/tools/capstone/repo -l:libcapstone.a" \
+				  -I$(abspath vsrc/pipe) \
+                  -CFLAGS "-O3 -march=native -DWAVE_ENABLE=$(WAVE_ENABLE) -I$(NPC_CSRC) -I$(NPC_HOME)/include/generated -I$(NEMU_INC) -I$(NPC_HOME)/tools/capstone/repo/include -DENABLE_DIFFTEST=$(ENABLE_DIFFTEST)" \
+                  -LDFLAGS "-O3 -ldl -lreadline -L$(NPC_HOME)/tools/capstone/repo -l:libcapstone.a" \
                   -Wall -Wno-fatal \
                   --top-module $(TOPNAME) \
-                  -MAKEFLAGS "OPT_FAST=-O3 OPT_GLOBAL=-O3"
+
 
 # ── Kconfig ──
 include $(NPC_HOME)/scripts/config.mk
 -include $(NPC_HOME)/include/config/auto.conf
+# ── B5: 顶层 top 内部切换到 core_pipe ──
+VERILATOR_FLAGS += $(if $(CONFIG_CORE_PIPE),+define+CORE_PIPE)
+
+
 # 必须在 include auto.conf 之后才能读 CONFIG_WAVE
 WAVE_ENABLE := $(if $(CONFIG_WAVE),1,0)
 VERILATOR_FLAGS += $(if $(CONFIG_WAVE),--trace)
@@ -120,8 +126,6 @@ wave:
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f ./perf.csv
-
-
 
 # ══════════════════════════════════════════════════════════════
 #  make perf —— 一键复现性能数据 (讲义「记录性能数据」要求)

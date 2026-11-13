@@ -14,6 +14,7 @@ void  npc_reset(void);
 void  npc_cycle(void);           // one clock cycle (posedge + negedge)
 void  npc_exec_inst(void);       // run until next instruction starts
 void  cpu_exec(int64_t n);       // n>0: 跑 n 条; n<0: 跑到停机
+int   cpu_exit_status(void);
 
 // mtrace (csrc/mtrace.cpp)
 void  mtrace_open(const char *path);

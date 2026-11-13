@@ -125,10 +125,12 @@ void npc_get_gprs(uint32_t *gpr)
 {
   if (top == nullptr || gpr == nullptr) return;
   gpr[0] = 0;  // x0 恒为 0
-  for (int i = 1; i < 32; i++)
+  for (int i = 1; i < 16; i++)
   {
     gpr[i] = top->rootp->top__DOT__u_core__DOT__u_regfile__DOT__rf[i];
   }
+  for (int i = 16; i < 32; i++)
+    gpr[i] = 0;  // RV32E 无 x16~x31, 不留未初始化值 防止difftest出错
 }
 
 bool npc_get_mmio(void) { return top->mmio_dbg; }

@@ -2,15 +2,19 @@ module top (
   input  wire         clk,
   input  wire         rst,
   output wire         halt,
-  output wire         aborted,        // 非法指令/异常终止(对齐 NEMU_ABORT)
+  output wire         aborted,
   output wire [31:0]  pc,
-  output wire [2:0]   state_dbg,      // ctrl_state for monitor
-  output wire         inst_retire, 
-  output wire [31:0]  retire_inst_dbg,  //刚退休的      
-  output wire         mmio_dbg       // 本条指令是否访问外设(difftest)
+  output wire [2:0]   state_dbg,
+  output wire         inst_retire,
+  output wire [31:0]  retire_inst_dbg,
+  output wire         mmio_dbg
 );
 
+`ifdef CORE_PIPE
+  core_pipe u_core (
+`else
   core u_core (
+`endif
     .clk            (clk),
     .rst            (rst),
     .pc             (pc),

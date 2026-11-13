@@ -19,7 +19,7 @@ module arbiter (
   output wire         lsu_done,
   output wire [31:0]  lsu_resp_rdata,
 
-  // ── 合并后的单请求 → axi_lite_master ──
+  // ── 合并后的单请求 → axi_master ──
   output wire [7:0]   m_req_len,        // 突发拍数-1
   output wire         m_req_valid,
   output wire         m_req_we,

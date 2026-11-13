@@ -220,6 +220,10 @@ bool difftest_step(uint32_t dut_pc, uint32_t dut_inst, const uint32_t *dut_gpr)
   return !diff_failed;
 }
 
+bool difftest_failed(void) { return diff_failed; }
+
+
+
 #else
 
 // difftest 关闭: 镜像已由 dpi_load_image() 装好, 这里无事可做
@@ -230,5 +234,6 @@ bool difftest_step(uint32_t dut_pc, uint32_t dut_inst, const uint32_t *dut_gpr)
   (void)dut_pc; (void)dut_inst; (void)dut_gpr;
   return true; // always succeed when difftest disabled
 }
+bool difftest_failed(void) { return false; }
 
 #endif

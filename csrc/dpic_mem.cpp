@@ -64,12 +64,22 @@ size_t dpi_pmem_image_bytes(void)
 //     auipc t0,0 / sb zero,16(t0) / lbu a0,16(t0) / ebreak / 0xdeadbeef
 static const uint32_t default_pc_inst[] = 
 {
-  0x00000297,  // auipc t0,0
-  0x00028823,  // sb  zero,16(t0)
-  0x0102c503,  // lbu a0,16(t0)
-  0x00100073,  // ebreak (used as nemu_trap)
-  0xdeadbeef,  // some data
+  // 0x00000297,  // auipc t0,0
+  // 0x00028823,  // sb  zero,16(t0)
+  // 0x0102c503,  // lbu a0,16(t0)
+  // 0x00100073,  // ebreak (used as nemu_trap)
+  // 0xdeadbeef,  // some data
+
+  0x00100093,  // addi x1, x0, 1
+  0x00200113,  // addi x2, x0, 2
+  0x00300193,  // addi x3, x0, 3
+  0x00400213,  // addi x4, x0, 4
+  0x00500293,  // addi x5, x0, 5
+  0x00208133,  // add  x2, x1, x2   ← x1 隔 5 条, x2 隔 4 条, 都已写回  没有风险的指令
+  0x00000513,  // addi a0, x0, 0
+  0x00100073,  // ebreak
 };
+
 
 // 无镜像时的兜底: 灌入默认程序, 让 make run 裸跑也能跑出 GOOD TRAP
 void dpi_load_default(void)

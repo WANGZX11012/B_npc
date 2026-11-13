@@ -3,6 +3,19 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <readline/readline.h>
+#include <readline/history.h>
+
+static char *rl_gets(void)
+{
+  static char *line_read = NULL;
+  if (line_read) { free(line_read); line_read = NULL; }
+  line_read = readline("(npc) ");
+  if (line_read && *line_read) add_history(line_read);
+  return line_read;
+}
+
+
 
 static int is_batch = 0;
 void sdb_set_batch(void) { is_batch = 1; }
@@ -37,12 +50,16 @@ static int cmd_si(char *args)
 
 static int print_regs(void)
 {
-  printf("pc=0x%08x  ir=0x%08x  state=%d  halt=%d\n",
-         npc_pc(), npc_retire_inst(), npc_state(), npc_halted());
+  uint32_t gpr[32];
+  npc_get_gprs(gpr);
+  for (int i = 0; i < 16; i++)
+  {
+    printf("x%-2d = 0x%08x%s", i, gpr[i], (i % 4 == 3) ? "\n" : "   ");
+  }
   return 0;
 }
 
-static int cmd_r(char *args)    { return print_regs(); }
+
 static int cmd_q(char *args)    { return -1; }
 
 static int cmd_info(char *args)
@@ -62,7 +79,6 @@ static struct {
   { "c",    "Continue until halt",             cmd_c    },
   { "si",   "Step N instructions (default 1)", cmd_si   },
   { "info", "info r: print registers",         cmd_info },
-  { "r",    "Print registers (alias of info r)", cmd_r  },
   { "q",    "Quit",                            cmd_q    },
 };
 
@@ -93,22 +109,17 @@ void sdb_mainloop(void)
 {
   if (is_batch) { cpu_exec(-1); return; }
 
-  char line[256];
-  printf("(npc) "); fflush(stdout);
-
-  while (fgets(line, sizeof(line), stdin))
+  char *line;
+  while ((line = rl_gets()) != NULL)
   {
-    // 去掉行尾 \r \n 及尾随空白: 否则 "si 10\n" 的 args 是 "10\n",
-    // strtol 的 endptr 会停在 '\n' 上而被误判为非法输入
     int len = (int)strlen(line);
     while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r' ||
                        line[len-1] == '\t' || line[len-1] == ' '))
       line[--len] = '\0';
 
-    char *str_end = line + len;        // ← 原来是 line + strlen(line)
+    char *str_end = line + len;
     char *cmd = strtok(line, " \t\n");
-    
-    if (!cmd) { printf("(npc) "); fflush(stdout); continue; }
+    if (!cmd) continue;
 
     // 剩余整串作为 args, 不按空格切, 将来加 p/w 不用改框架
     char *args = cmd + strlen(cmd) + 1;
@@ -130,7 +141,5 @@ void sdb_mainloop(void)
       }
     }
     if (i == NR_CMD) printf("Unknown command '%s'\n", cmd);
-
-    printf("(npc) "); fflush(stdout);
   }
 }

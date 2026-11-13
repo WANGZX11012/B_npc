@@ -4,6 +4,27 @@ config ISA
   string
   default "riscv32"
 
+menu "CPU Core"
+
+choice
+  prompt "CPU implementation"
+  default CORE_MULTI
+
+config CORE_MULTI
+  bool "multi-cycle (B4, core.v)"
+
+config CORE_PIPE
+  bool "pipeline (B5, core_pipe.v)"
+
+endchoice
+
+endmenu
+
+
+
+
+
+
 menu "Devices"
 
 config HAS_SERIAL

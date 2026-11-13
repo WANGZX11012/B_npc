@@ -5,6 +5,13 @@
 CONFIG_ISA="riscv32"
 
 #
+# CPU Core
+#
+CONFIG_CORE_MULTI=y
+# CONFIG_CORE_PIPE is not set
+# end of CPU Core
+
+#
 # Devices
 #
 # CONFIG_HAS_SERIAL is not set

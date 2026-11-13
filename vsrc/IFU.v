@@ -15,54 +15,69 @@ module IFU (
   input               clk,
   input               rst,
 
-    // 输入: 级间握手(下游给的"能收"信号)
-  input               out_ready,                       // 下游能收(过渡期 = ctrl 处于 WB 拍)
- 
-  input               pc_we,                           // update PC
-  // 输入: EXU / CSR (next-PC calc)
-  input  [31:0]       alu_result,                      // jump/branch target
+   // ── 输入: 级间握手 ──
+  input               out_ready,                       // 下游本拍能收(逆流反压)
+
+  // pc_we 决定 pc_reg 何时推进, 从而决定 pc 端口的语义。两套核接法不同:
+  //   core.v      (多周期): .pc_we(retire)                   → 退休才写, pc = 当前指令 PC
+  //   core_pipe.v (流水线): .pc_we(if_valid && if_id_ready)  → 交付即写, pc = 推测取指 PC
+  //   故 pc 是"架构 PC"还是"推测 PC"由外部决定, 本模块不作假设。
+  input               pc_we,
+
+  // ── 输入: EXU / CSR (next-PC 计算) ──
+  input  [31:0]       alu_result,                      // 跳转/分支目标
   input  [2:0]        npc_sel,                         // NPC_JALR/JAL/BR/...
-  input               branch_taken,                    // branch condition met
-  input  [31:0]       csr_mtvec,                       // exception entry
-  input  [31:0]       csr_mepc,                        // mret return addr
-  input               irq_taken,                       // 中断响应: WB拍&MIE&mtip 三者成立时拉高, 强制跳 mtvec
+  input               branch_taken,                    // 分支条件成立
+  input  [31:0]       csr_mtvec,                       // 异常入口
+  input  [31:0]       csr_mepc,                        // mret 返回地址
+  input               irq_taken,                       // 顶层判定: 拉高则强制跳 mtvec, 覆盖本条指令意图
   input               access_fault,                    // 总线错误
 
-  //提供给axi转化的信号 简单请求
-  output              req_valid,
-  output [31:0]       req_addr,
-  input               handshake_done, //握手完成信号
-  input  [31:0]       resp_rdata,             
+  // ── 取指请求/响应: 上游可为 AXI 桥或仿真桩, 此处只看握手 ──
+  output              req_valid,                       // 请求(电平保持到应答)
+  output [31:0]       req_addr,                        // = pc_reg
+  input               handshake_done,                  // 应答脉冲(单拍)
+  input  [31:0]       resp_rdata,                      // 返回的 32 位指令字
 
+  // ── 输出: 交付给下游段寄存器 ──
+  output              out_valid,                       // 本拍交付是否有效(= hold_valid)
+  output [31:0]       out_pc,                          // 本拍交付的那条指令自己的 PC
 
-  output              out_valid,                       // 我手里有一条取回的指令
-  output [31:0]       out_pc,                          // 这条指令自己的 PC
+  // ── 输出: 给顶层核 ──
+  //   三类 PC 名字相近但归属不同, 请勿混用:
+  //     ① pc     = pc_reg 的 Q 端, "下一个取指地址"(取指态)
+  //     ② out_pc = 正交付的那条指令的地址(指令态), 随指令走, 供 mepc / 精确异常用
+  //     ③ pc4    = out_pc + 4, 参照物是本条指令, 不是 pc 端口
+  //   注: 握手当拍 cur_pc 取自 pc_reg, 故 pc4 数值上等于 pc+4; 差别在参照物, 不在数值。
+  //   npc_normal 的 "normal" 指"未经 fault/irq 劫持", 不是"顺序+4": 跳转目标也在其中。
+  output [31:0]       pc,
+  output [31:0]       pc4,
+  output [31:0]       inst,                            // 本拍交付的指令编码(bypass 或 hold)
+  output [31:0]       npc_normal
 
-
-  // 输出: to core / ctrl
-  output [31:0]       pc,             // program counter
-  output [31:0]       pc4,            // pc + 4
-  output [31:0]       inst,           // fetched instruction
-  output [31:0]       npc_normal     //未被劫持的next pc
 
 );
 
   // ── 保持寄存器: 接住总线返回的取指结果 ──
-  // handshake_done 是单拍脉冲, 不锁存就丢了; 锁住后一直保持到下游接收(out_ready)
+  //   handshake_done 是单拍脉冲, 不锁存就丢; 锁住后一直举着, 直到 fire 松手。
+  //   hold_valid=0 不是"没有指令", 而是"回到可发请求的初态": 同一拍就在发起取指。
   reg        hold_valid;
   reg [31:0] hold_inst;
   reg [31:0] hold_pc;
 
-  //提供给axi的输入
-  assign  req_valid = !rst && !hold_valid;   // 脱离ctrl控制 自己发请求 手里空了就去取
+  // 取/交互斥: 手上有货(hold_valid=1)就不再发请求。
+  //   单槽保持寄存器使"接住"与"交付"必占两个时钟周期 → 每 2 周期进一条指令(IPC≈0.5)。
+  //   接真实 AXI/icache 后 hold_valid=0 会持续到握手回来, 那时才是真正的访存等待。
+  assign  req_valid = !rst && !hold_valid;
   assign  req_addr = pc;
+
 
   // 中断劫持: irq_taken 时无视本条指令的意图, 强制跳 mtvec
   wire [31:0] next_pc;
   assign next_pc = access_fault ? 32'b0 :(irq_taken ? csr_mtvec :  npc_normal); //fault跳0
 
   // ── PC register ──
-  reg [31:0] pc_reg;
+  reg [31:0] pc_reg;   // 取指 PC(推测)
   initial pc_reg = `RESET_PC; 
 
   always @(posedge clk)
@@ -80,7 +95,7 @@ module IFU (
   wire [31:0] cur_pc   = handshake_done ? pc_reg     : hold_pc;
 
   assign pc   = pc_reg;
-  assign pc4  = cur_pc + 32'd4;   // pc+4 属于"这条指令", 不是"当前 PC"
+  assign pc4  = cur_pc + 32'd4;   // 本指令 PC+4
   assign inst = cur_inst;
 
   // ── next PC ──
@@ -117,7 +132,7 @@ module IFU (
     end
   end
 
-  assign out_valid = hold_valid;   // 我手里有一条指令
+  assign out_valid = hold_valid;   // 我手里有一条指令 还没被取走
   assign out_pc    = cur_pc;      // 这条指令自己的 PC
 
 

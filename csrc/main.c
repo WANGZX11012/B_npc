@@ -7,5 +7,5 @@ int main(int argc, char *argv[]) {
   init_monitor(argc, argv);
   sdb_mainloop();
   npc_finish();
-  return 0;
+  return cpu_exit_status();
 }

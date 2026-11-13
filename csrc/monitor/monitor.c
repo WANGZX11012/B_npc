@@ -2,6 +2,7 @@
 #include "sdb/sdb.h"
 #include "difftest.h"
 #include "dpic_mem.h"     // dpi_load_image()
+#include "autoconf.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -18,7 +19,11 @@ static char img_path[256];
 static void welcome(void) {
   printf("Trace: " ANSI_FMT("OFF", ANSI_FG_RED) "\n");
   printf("Build time: %s, %s\n", __TIME__, __DATE__);
-  printf("Welcome to " ANSI_FMT("riscv32", ANSI_FG_YELLOW ANSI_BG_RED) "-multi-cycle-NPC!\n");
+  #ifdef CONFIG_CORE_PIPE
+    printf("Welcome to " ANSI_FMT("riscv32", ANSI_FG_YELLOW ANSI_BG_RED) "-pipelined-NPC!\n");
+  #else
+    printf("Welcome to " ANSI_FMT("riscv32", ANSI_FG_YELLOW ANSI_BG_RED) "-multi-cycle-NPC!\n");
+  #endif
   printf("For help, type \"help\"\n");
 }
 

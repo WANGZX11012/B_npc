@@ -6,6 +6,10 @@
 // 初始化 difftest: 加载 REF .so, 用 bin 镜像同步 REF 内存, 同步寄存器
 void difftest_init(uint32_t dut_pc);
 
+// difftest 是否已经出现过 mismatch (粘滞, 一旦置起不再清除)
+// 判定 PASS/FAIL 时必须优先看它, 不能用 a0 覆盖
+bool difftest_failed(void);
+
 // 每条指令完成后调用一次: REF 执行 1 条, 然后比对寄存器
 // 返回 true 表示比对通过, false 表示 mismatch
 bool difftest_step(uint32_t dut_pc, uint32_t dut_inst, const uint32_t *dut_gpr);

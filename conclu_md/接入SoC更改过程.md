@@ -463,5 +463,125 @@ B4.6 形式化验证、B4.8 fence.i 与 SMC、SoC 侧 axi4_delayer、
 | icache `hit` 虚高 17.9M（等于 fetch_n） | 改 `hit = fetch - miss`，与 perf 同源 |
 | `si 10` 报 `Usage` | `args` 带行尾 `\n`，`strtol` 的 `endptr` 停在 `\n`；`fgets` 后 strip |
 
+---
+
+# 2026-11-13 流水线核：RAW 停顿被 mem_stall 屏蔽导致静默算错
+
+## 一、现象
+
+流水线核（`core_pipe`）跑 cpu-test：`dummy`/`shift`/`div`/`load-store`/`fib` 通过，
+`add`/`bit`/`movsx`/`fact`/`shuixianhua` 失败；`recursion` 卡住不结束。
+
+失败特征：**不是崩溃、不是跑飞，而是 `a0=1`**（`trap.h` 的 `check()` 失败），
+执行流完全正常。`add` 只跑 58 条就报，`shuixianhua` 跑 14968 条才报。
+
+## 二、定位过程（可复用的排查顺序）
+
+1. **用多周期核做对照**：同一套 `IDU.v`/`EXU.v`/`WBU.v`/`RegisterFile.v`/`IFU.v`/`dpic_mem`
+   多周期全部通过 → 共用模块（ALU/分支/移位/立即数/软件除法库）全部排除，
+   问题只可能在流水线独有模块（段寄存器 / hazard_unit / LSU_pipe / redirect_unit / 顶层胶水）。
+2. **看失败分布**：`div`（16922 条、重度软件除法）和 `shift` 通过 → 排除除法库与移位。
+3. **挑最短失败用例**：`add` 仅 58 条，反汇编是密集访存
+   （`sw a5,0(sp)` 紧跟 `lw a5,0(sp)`，再 `lw a0,0(s1)`/`lw a3,0(s0)`）→ 指向访存与冻结的交互。
+4. **排除跳转嫌疑**：把实际退休的**指令字序列**与 `objdump` 逐字对比，完全一致
+   → 执行流没乱，不是冲刷/重定向问题。
+   ⚠️ 踩坑：`print_inst(before_pc, inst)` 打的是「下一条 PC + 刚退休指令」，
+   PC 列和指令字列天然错一位，一度误判成 `jal` 跳错，白改一版冲刷逻辑（已撤回）。
+5. **A/B 收敛**：只把 `idex_bubble` 的 `&& !mem_stall` 去掉 → 10/10 立刻全过。
+
+## 三、根因
+
+`core_pipe.v`：
+
+```verilog
+// 错误
+assign idex_bubble = raw_hazard && !mem_stall;
+// 正确
+assign idex_bubble = raw_hazard;
+```
+
+`idex_bubble` 接 `u_idex.stall`，拉高时做两件事：
+① `id_ready=0`，把 ID 段指令按住；② EX 段整组清零（注气泡）。
+
+### 为什么屏蔽会错
+
+`id_ready` 的公式：
+
+```verilog
+assign id_ready = (!ex_valid || ex_ready) && !stall;   // id_ex_reg.v:67
+```
+
+LSU 访存冻结期间（`mem_stall=1`）：
+- `mem_ready = (...) && !mem_stall = 0`
+- `ex_ready = !mem_valid || mem_ready = 0`（load 就在 MEM 段，`mem_valid=1`）
+
+此时 `id_ready` 只剩 `(!ex_valid) && !stall`：
+
+| EX 段状态 | `ex_valid` | 屏蔽 `stall` 后 `id_ready` | 后果 |
+|---|---|---|---|
+| 有有效指令 | 1 | `0 && 1 = 0` | 安全（原推理只覆盖了这种） |
+| **气泡** | **0** | `1 && 1 = 1` | **ID 段指令被放行，带旧值进 EX** |
+
+而 RAW 场景里 EX 段**恰恰常是气泡**（前一拍 hazard 刚注过）。指令一旦进 EX，
+`ex_rs1_data` 在 posedge 就锁死；RF 是 ID 段组合读，这一刻读到的是 load **尚未写回**的旧值，
+之后总线数据回来也补不上。
+
+### 当初为什么会这么写
+
+修完 `mem_stall` 重复退休 bug 后的保护性推理：「冻结期间若 hazard 命中，
+`u_idex` 的清零分支优先，会把本该保持的 EX 段指令清成气泡丢掉」。
+推演时写的是 `id_ready = (!ex_valid || 0) && !stall = 0`，
+**隐含假设了 `ex_valid=1`**，漏掉了「EX 是气泡」这一半。
+
+另一个误判：「RAW 信息不会丢，解冻后照常挡住，只是延后」——
+`raw_hazard` 确实会保持，但伤害在冻结期间就已造成，解冻后再挡已经晚了。
+
+### 为什么「注气泡」和「保持」不冲突
+
+`u_idex` 的清零分支优先级最高，但清出来的气泡能不能往下传由 `ex_ready` 决定。
+冻结期间 `ex_ready=0`，气泡**传不下去**，不会覆盖 MEM 段那条 load。
+真正起作用的是 `!stall` 把 `id_ready` 拉低、按住 ID 段；清零只是附带且无害。
+
+## 四、为什么只有部分程序中招（触发条件）
+
+要同时满足：
+
+1. 有 load 在 MEM 段等总线 → `mem_stall=1`
+2. 同时 `hazard_unit` 报 RAW → `raw_hazard=1`
+3. 同时 **EX 段是气泡** → `ex_valid=0`（否则 `id_ready` 本来就是 0）
+4. 同时 **ID 段有有效指令**（IFU 单槽取指每 2 拍才进一条，ID 段常是气泡，放行气泡无害）
+5. 被放行的指令真的依赖那条 load，且旧值影响最终 `check()`
+   （若 load 读回的值恰好等于旧值，或结果后来被覆盖，也不报错）
+
+IFU 单槽取指导致的满流水线气泡，**既让 EX 段容易是气泡（利于触发），
+又让 ID 段容易是气泡（不利于触发）**，两种效应抵消 → 中招是概率性的，不是每条 load 必挂。
+
+## 五、mem_stall 的作用范围（易混点）
+
+| 场景 | 走哪个机制 |
+|---|---|
+| MEM 段 `lw`/`sw` 等总线 | `mem_stall = !lsu_ready`（`lsu_ready` 来自 arbiter 的 **LSU 侧**） |
+| IFU 取指等总线 | **不走 `mem_stall`**。IFU 靠自身 `hold_valid` 单槽机制：`req_valid = !hold_valid`，没取回时「手里没货」，流水线里没有指令被卡住 |
+
+另外 `arbiter_pipe.ifu_ready` **未引出**（`cpu_bus_unit` 无此端口，`core_pipe` 也没接），
+取指等待完全是 IFU 内部停顿，不通过任何 `stall` 反压流水线。
+所以 `mem_stall` 的准确语义是「**LSU 数据访存事务未完成**」，与取指无关。
+
+## 六、修复与验证
+
+| | 结果 |
+|---|---|
+| 改前 | 10 个代表用例中 5 个失败（add/bit/movsx/fact/shuixianhua） |
+| 改后 | **36/36 全 PASS** |
+
+改动只有一行（另加注释说明根因），`redirect_unit.v` 与其他文件未改。
+
+## 七、遗留观察点
+
+去掉屏蔽后，当初担心的「EX 段有有效指令时被清成气泡丢指令」理论上仍可能发生，
+但 36/36 未暴露（大概率与 IFU 单槽、气泡多有关）。
+**接 icache 后气泡变少，需重新验证这条路径。**
+
+
 
 

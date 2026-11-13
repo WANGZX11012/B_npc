@@ -6,7 +6,8 @@
 #define MAX_INST_TO_PRINT 10
 
 static uint64_t g_nr_inst    = 0;
-static bool     g_print_step = false;
+static bool     g_print_step = false; 
+static int g_exit_status = 0;   // 0 = PASS, 1 = FAIL
 
 #ifndef ENABLE_DIFFTEST
 #define ENABLE_DIFFTEST 0
@@ -96,15 +97,26 @@ void cpu_exec(int64_t n)
 {
   // c 传 -1, 必须加 n > 0, 否则 -1 <= 10 会误开打印
   g_print_step = (n > 0 && n <= MAX_INST_TO_PRINT);
+  g_exit_status = 0;      
 
   execute(n);
-
-  if (!npc_halted()) return;
+  if (difftest_failed()) 
+  {
+    g_exit_status = 1;
+    return;
+  }
+  if (!npc_halted())
+  {
+    g_exit_status = 1;
+    return;
+  }
 
   if (npc_aborted())
   {
     printf("npc: HIT BAD TRAP (illegal instruction) at pc = 0x%08x, inst = 0x%08x, total_inst = %lu\n",
            npc_pc(), npc_retire_inst(), g_nr_inst);
+    g_exit_status = 1;
+    return;
   }
   else
   {
@@ -121,3 +133,6 @@ void cpu_exec(int64_t n)
 
   for (int i = 0; i < 100; i++) npc_cycle();
 }
+
+
+int cpu_exit_status(void) { return g_exit_status; }
